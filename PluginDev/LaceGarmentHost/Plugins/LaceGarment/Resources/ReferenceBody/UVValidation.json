@@ -1,0 +1,171 @@
+{
+  "triangle_count": 73628,
+  "resolution": 2048,
+  "tolerance_uv_area": 1e-12,
+  "required_gap_px": 32,
+  "required_outer_px": 16,
+  "errors": [],
+  "minimum_outer_px": 50.096920013427734,
+  "island_count": 16,
+  "density_reference_px_per_cm": 105.7409682674263,
+  "islands": [
+    {
+      "id": 0,
+      "triangles": 880,
+      "area_cm2": 2.228351610551396,
+      "area_uv": 0.005938654330434945,
+      "density_px_per_cm": 105.72607663419396,
+      "relative_density": 0.9998591687453185
+    },
+    {
+      "id": 1,
+      "triangles": 820,
+      "area_cm2": 1.9169382911714148,
+      "area_uv": 0.005107946035495914,
+      "density_px_per_cm": 105.71802379676267,
+      "relative_density": 0.9997830124781381
+    },
+    {
+      "id": 2,
+      "triangles": 4834,
+      "area_cm2": 11.306182669381784,
+      "area_uv": 0.030133258228797644,
+      "density_px_per_cm": 105.7292131175433,
+      "relative_density": 0.9998888306956555
+    },
+    {
+      "id": 3,
+      "triangles": 1442,
+      "area_cm2": 3.478064392413233,
+      "area_uv": 0.009271029680212983,
+      "density_px_per_cm": 105.73654826800653,
+      "relative_density": 0.999958199745168
+    },
+    {
+      "id": 4,
+      "triangles": 31092,
+      "area_cm2": 75.36049288541528,
+      "area_uv": 0.20091518920662735,
+      "density_px_per_cm": 105.746127590266,
+      "relative_density": 1.0000487920899934
+    },
+    {
+      "id": 5,
+      "triangles": 7190,
+      "area_cm2": 18.49339582950568,
+      "area_uv": 0.049300495824951884,
+      "density_px_per_cm": 105.74193737858884,
+      "relative_density": 1.0000091649544962
+    },
+    {
+      "id": 6,
+      "triangles": 5658,
+      "area_cm2": 14.330988516324727,
+      "area_uv": 0.03820505958675913,
+      "density_px_per_cm": 105.74316837318048,
+      "relative_density": 1.00002080655956
+    },
+    {
+      "id": 7,
+      "triangles": 882,
+      "area_cm2": 2.032581428584928,
+      "area_uv": 0.005416687505860274,
+      "density_px_per_cm": 105.72382482313782,
+      "relative_density": 0.9998378732049709
+    },
+    {
+      "id": 8,
+      "triangles": 2,
+      "area_cm2": 0.003955934745174467,
+      "area_uv": 1.054697800354637e-05,
+      "density_px_per_cm": 105.74733051981475,
+      "relative_density": 1.0000601682819128
+    },
+    {
+      "id": 9,
+      "triangles": 5672,
+      "area_cm2": 14.52090207076866,
+      "area_uv": 0.03871128161748505,
+      "density_px_per_cm": 105.7430733981953,
+      "relative_density": 1.0000199083742423
+    },
+    {
+      "id": 10,
+      "triangles": 880,
+      "area_cm2": 2.228434173931496,
+      "area_uv": 0.00593865314450337,
+      "density_px_per_cm": 105.7241074866021,
+      "relative_density": 0.9998405463738372
+    },
+    {
+      "id": 11,
+      "triangles": 1442,
+      "area_cm2": 3.478029741631049,
+      "area_uv": 0.009271004559552293,
+      "density_px_per_cm": 105.7369317287274,
+      "relative_density": 0.9999618261609947
+    },
+    {
+      "id": 12,
+      "triangles": 7190,
+      "area_cm2": 18.493480806108334,
+      "area_uv": 0.049300550011775246,
+      "density_px_per_cm": 105.7417525499283,
+      "relative_density": 1.0000074170164588
+    },
+    {
+      "id": 13,
+      "triangles": 4822,
+      "area_cm2": 11.27701190058726,
+      "area_uv": 0.030056178604352723,
+      "density_px_per_cm": 105.73038517196792,
+      "relative_density": 0.9998999148992885
+    },
+    {
+      "id": 14,
+      "triangles": 820,
+      "area_cm2": 1.9170701710483335,
+      "area_uv": 0.00510788497261494,
+      "density_px_per_cm": 105.71375555282144,
+      "relative_density": 0.9997426473858644
+    },
+    {
+      "id": 15,
+      "triangles": 2,
+      "area_cm2": 0.003956062843827084,
+      "area_uv": 1.0546833212277118e-05,
+      "density_px_per_cm": 105.74489258657192,
+      "relative_density": 1.0000371125705574
+    }
+  ],
+  "overlap_pairs": [],
+  "minimum_island_gap_px": 77.35064811351987,
+  "closest_islands": [
+    6,
+    9
+  ],
+  "stretch_anisotropy": {
+    "50": 1.088161893787367,
+    "95": 1.2352942480869864,
+    "99": 1.339409984685704,
+    "100": 2.3011449264670247
+  },
+  "passed": true,
+  "seam_edges": 1344,
+  "anatomical_regions": {
+    "arm_l": 2412,
+    "arm_r": 2418,
+    "foot_l": 721,
+    "foot_r": 721,
+    "hand_l": 410,
+    "hand_r": 410,
+    "head": 15546,
+    "leg_l": 3595,
+    "leg_r": 3595,
+    "neck": 441,
+    "sole_l": 440,
+    "sole_r": 440,
+    "torso_back": 2836,
+    "torso_front": 2829
+  }
+}

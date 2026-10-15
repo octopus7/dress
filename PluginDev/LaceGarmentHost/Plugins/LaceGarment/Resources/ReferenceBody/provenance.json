@@ -1,0 +1,33 @@
+{
+  "snapshotDate": "2026-10-16",
+  "source": "LaceLoft user workspace procedural dummy, ArtSource/Dummy",
+  "purpose": "Independent reference body snapshot; no link back to the game project",
+  "licenseReview": "Procedural source inspected; no external model import found. User-facing distribution license has not been supplied.",
+  "files": [
+    {
+      "file": "LaceLoftDummy.fbx",
+      "sha256": "376e1ad7a84f64ab595c305ccd01c57427fdfea41d7c98c05f9387fe566c5b90",
+      "bytes": 2228732
+    },
+    {
+      "file": "BaseColor_White.png",
+      "sha256": "60dffb7178791b86d8286d071b441d18f71e5aaf36c9c313c5431778ee0aebf9",
+      "bytes": 78302
+    },
+    {
+      "file": "Measurements.json",
+      "sha256": "4082cccc39fd33245068a235ffd502c83256079793ecd1b96bc9e41c295ecdc2",
+      "bytes": 41968
+    },
+    {
+      "file": "UVValidation.json",
+      "sha256": "5aeffb5e6d22331b984bcb19010a0d5e53c1ffb4e243c5a8c829199ddd280d95",
+      "bytes": 4589
+    },
+    {
+      "file": "UVLayout.png",
+      "sha256": "459df78cead63a7e2039a315369652683a4abd8195c27c009c0cb5e639d6ee7b",
+      "bytes": 981823
+    }
+  ]
+}
