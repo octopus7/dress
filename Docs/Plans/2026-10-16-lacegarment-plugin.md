@@ -101,6 +101,8 @@
 
 ## Execution Ledger
 
+- 사용자 최종 지시: 작업을 중단하고 추가 빌드·테스트 없이 중간 커밋한다. 이 지시가 이전의 이 대화 stage/commit 금지를 대체한다. 중단 전 마지막 검증은 BendingControl-Green Editor 빌드·49/49(오류/경고0)이며 실제 쇼츠/티셔츠 진단은 여전히 실패했다. Task 1~3은 미완료로 보존하고 후속 구현·검토를 중단한다. 상세 결과와 남은 항목은 플러그인 STATUS에 기록한다.
+
 - 2026-10-16: 기존 설계/실행 승인 REQ-012 확인. 모든 요청이 기존 기록에 포함되어 중복 REQ는 추가하지 않는다.
 - Pre-flight: Task 1의 mm rest와 cm initial을 Task 2가 소비한다. 파일 단계에서만 m/GLB 좌표 변환한다. Task 3 문서 원본이 Task 4 해시와 Task 5 UI의 유일한 기준. Task 6은 Task 4 검증 원본과 Task 3 출력만 배포한다.
 - 실행 환경: 공유 저장소에 대부분 파일이 미추적 상태. 브랜치/커밋 기반 스킬 스크립트 대신 이 원장과 전용 로그를 사용하며 타 작업을 스테이징하지 않는다.
@@ -121,3 +123,11 @@
 - 목길이 불가능 조건의 독립 검토 및 회귀: NeckLength-Red36/37 → 뒤목 깊이 수정 후 Green37/37. Checkpoint-4의 새 Blueprint/C++에서도 각각37/37와 Cloth 재열기 통과. Fit-12는 봉제 간격·관통0으로 개선되었으나 변형 기준 실패. 이후 진단 문서 재실행으로 원본의 한 조건씩 비교하고 있으며 기본 템플릿을 임의로 연속 조정하지 않는다.
 - REQ-017 적용: 앞으로 Task 1~3과 호스트/UE 애셋 품질 검증만 진행. 전달 전에 시작한 Checkpoint-5는 성공 결과를 보존하고 새 프로젝트 반복 검증은 종료한다.
 - Task 2 충돌 확장: capsule만으로 근사한 실제 어깨/겨드랑이의 공간 손실이 계속 확인됨. UE Cloth가 native convex를 지원하므로 기존 capsule을 보존하면서 convex 생성·접촉·면 검사를 회귀부터 추가한다. 외부 도구는 사용하지 않는다. 런타임과 같은 FConvex 거리/두께 sweep을 사용하며, 평면 이동으로 둥근 두께 경계를 과대 근사하지 않는다. 실제 저장된 cooked geometry·bone-local 좌표·단위 scale·재열기 검증 후 바디에 적용한다.
+- Task 2 convex 하위 경로: float 정밀도에서 hull을 만들고 coplanar polygon face를 병합한 native FConvex로 거리·두께 sweep을 계산한다. 모서리 관통/이탈과 float 붕괴 회귀를 실제 UE에서 재현·수정하여 ConvexOutward-Green-2 Editor 빌드·40/40 통과. 바디 PhysicsAsset 연동은 미완료이며 기존22개 capsule/sphere를 유지한다. CA_NativePanelProbe 최신 재열기는 source 불일치로 실패해 재생성 대상이다. 커밋 조율용15개 안정 파일 manifest를 Saved/CommitCoordination에 기록하고 해당 파일만 동결했다.
+- 커밋 조율 종료:15개 파일은 게임 대화에서 a9fe0ac로 커밋했고 동결 해제됨. 이 대화는 stage/commit하지 않는다. 해제 뒤 이어가지 못했던 작업을 사용자 지적 후 재개했다.
+- Task 2/3 바디 convex: 실제 cooked shape의 unit bone-space 검증 및26방향 지지 다면체로 clavicle/upperarm6개를 저장.19bodies/16capsule+sphere/6convex, 새 프로세스41/41. Z8.0cm 틈과 원본 dominant 정점 포함 확인. TShirt-ShoulderConvex-1은 여전히283.9% 최대 변 길이 오차와 면 관통으로 실패. Z8.2cm의 실제 틈을 proxy가 메우는 잔여 문제 확인.
+- Task 3 수동 보정: generated/welded/joint 안정 ID와 내부 SHA256 topology 대응, maxDistance·skin 실제 Cloth 적용, 재생성 재적용 및 변경된 topology 미해결 보존. CorrectionMap-Red41/42 → Green-2 42/42. float 언더플로 회귀42/43 → CorrectionFailures-Green43/43. 파일 계약 canonical 해시나 archive 구현으로 간주하지 않는다. Task 1~3은 대표 의상·포즈 검증이 남아 전체 완료 아님.
+
+- Task 2/3 추가 검증: CA_NativePanelProbe 최신 재생성·새 프로세스 재열기/240frame 통과로 과거 source 불일치 해소. 쇼츠의 허리 가이드/가랑이 경로 길이 필요조건 수정 및 회귀44개로 확장. 접촉면 coverage 검사 추가 후 공기 틈 회귀를 재현·수정하여 BodyAngularSupport-Green45/45. 실제 cooked 삼각형29454개 전체 포함을 독립 검사했고19bodies/10capsule+sphere/19convex. Z8.2cm 공간, 대표 의상 변형/착장/포즈는 미완료이며 현재 쇼츠 비교 실행 중.
+- Task 2/3 겨드랑이 추가 공간: 실제 삼각형 보존과 공기 구 보호를 동시에 만족하는 whole-triangle 분할·병합 및 bounded support fallback으로 collisionFit0.3.9 저장. ArmNegativeSpaceSupports-Green46/46, 독립 접촉면29454/29454포함. 쇼츠의 양옆 가이드/밑단 폭 비교는 실패하여 기본 템플릿에 적용하지 않았고, 독립 제약 진단에서 확인한 중앙 밑위 길이를 비교 중. 대표 의상/포즈 인수는 아직 미완료.
+- Task 2/3 허벅지 테이퍼: 실제 단면3.573cm에 비해 proxy 둘레4.776cm가 밑단을 아래로 강제하는 과대 근사 확인.8구간/74방향과26방향 fallback으로0.3.10 저장, 문제 단면3.872cm. ThighTaperSupports-Green48/48 및 독립29454면 포함. 직접 CCD가 막지 않는 실제 두 의상 경로도 native 회귀로 확인. 대표 피팅은 여전히 검증 중이며 완료로 처리하지 않음.

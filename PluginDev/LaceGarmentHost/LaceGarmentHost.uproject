@@ -1,0 +1,7 @@
+{
+  "FileVersion": 3,
+  "EngineAssociation": "5.8",
+  "Description": "Isolated LaceGarment authoring and acceptance host.",
+  "Modules": [{"Name": "LaceGarmentHost", "Type": "Runtime", "LoadingPhase": "Default"}],
+  "Plugins": [{"Name": "LaceGarment", "Enabled": true}, {"Name": "AndroidFileServer", "Enabled": false}]
+}

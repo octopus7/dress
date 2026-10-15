@@ -4,7 +4,7 @@
 
 작성자/이용조건: REQ-013에 따라 미정. 저장소는 추후 비공개 전환 예정이며 라이선스 파일·문구·배포 이용조건을 임의로 추가하거나 확정하지 않는다. 공개 설정 변경은 실행하지 않았다.
 
-**현재: 패널/봉제/안정화/Cloth Collection 하위 경로 구현·자동화 확인. REQ-017에 따라 이번 완료 목표는 Task 1~3으로 축소되었으며 실제 대표 의상 피팅·포즈 검증은 진행 중입니다.**
+**현재: 사용자 요청으로 구현을 중단하고 중간 커밋으로 보존합니다. 패널/봉제/안정화/Cloth Collection 하위 경로는 구현했으나, Task 1~3 전체 완료가 아니며 실제 대표 의상 피팅·포즈 검증은 미완료입니다. 중단 요청 이후 추가 빌드·테스트는 실행하지 않았습니다.**
 
 **이번 실행 제외:** Task 4 독립 원본 파일, Task 5 실제 저작 WBP/EUW, Task 6 콘텐츠 팩·배포·cook, Task 7 새 프로젝트 최종 인수. 아래 전체 제품 관문 A–F와 과거 검증 기록은 보존하지만 전체 통과를 이번 완료 조건으로 삼지 않습니다. 호스트 빌드·자동화·UE 애셋 저장/재열기·대표 의상 품질 검증은 유지합니다. 배포 가능한 제품이 완성되었다는 뜻은 아닙니다.
 
@@ -17,7 +17,7 @@
 
 | 관문 | 상태 | 근거 |
 | --- | --- | --- |
-| A UE 단독 저작 | 일부 하위 경로 확인, 미통과 | 목표 고정점·문서→생성·충돌체 중첩/이동 경로·목길이 하한 포함37개 자동화 통과. 패널 Cloth 저장/재열기/240 tick/렌더 확인. 실제 저작 UI 및 대표 의상의 착장·포즈 검증 미완료 |
+| A UE 단독 저작 | 일부 하위 경로 확인, 미통과 | 목표 고정점·문서→생성·충돌체·수동 보정·굽힘 진단 제어 포함49개 자동화로 확장. 중단 전 마지막 BendingControl-Green에서 Editor 빌드 및49/49(오류/경고0) 통과. native panel은 ConvexVersion-Native-Save/Reopen에서 최신 원본 동일성·312particles/240frame 통과로 이전 불일치 해소. 실제 저작 UI 및 대표 의상의 착장·포즈 검증 미완료 |
 | B 원본 왕복 | 미실행 | |
 | C 천·포즈 | 미실행 | |
 | D 배포 독립성 | 일부 하위 경로 확인, 미통과 | Checkpoint-4 개발용 BuildPlugin 선컴파일 산출물과 새 Blueprint/C++ 프로젝트에서 각각37개 자동화·저장 Cloth 재열기 확인. 최종 배포 팩·독립 원본·참조 격리 검사는 미구현 |
@@ -25,6 +25,14 @@
 | F 새 프로젝트 인수 | 일부 하위 경로 확인, 미통과 | 새 빈 Blueprint/C++ 프로젝트에서 현재 하위 경로 확인. 컴파일러 없는 환경, cook/Development/Shipping 미실행 |
 
 ## 검증 기록
+
+### 사용자 요청 중간 보존
+
+- 추가 구현·검토를 중단하고 현재 플러그인 소스·원본 애셋·도구·문서를 커밋한다. 아래 검증은 중단 전에 실행한 기록이며 이번 마무리를 위한 재실행은 하지 않는다.
+- `DolphinShorts-LongerRiseWideHem-1`: 360단계, 최대 상대 변 길이 오차0.4437638, 속도0.23068cm/s, 면 관통0.013501cm로 실패. 기본 템플릿에 적용하지 않은 진단 비교다.
+- `TShirt-DeeperNeck-1`: 이미 시작된 실행의 종료 결과만 회수했다. 360단계, 최대 상대 변 길이 오차1.0842024, 속도1.29718cm/s, 봉제 간격6.78e-8cm, 정점 관통0cm, fitted=false/엔진 exit7. 기본 템플릿에 적용하지 않았다.
+- 실제 티셔츠·쇼츠의 수렴, Cloth 저장/재열기·런타임·포즈 인수는 미완료다. 단순 패널 프로브의 통과를 실제 의상의 통과로 대체하지 않는다.
+- 진단 draft·실행 로그·렌더는 로컬 `Saved/Verification/`에 보존하며 생성물로서 커밋에서 제외한다. 제안 단계의 봉제 정점 그룹 솔버 변경은 구현하지 않았다.
 
 로그 루트: `PluginDev/LaceGarmentHost/Saved/Verification/`. 각 실행은 새 디렉터리와 새 index.json을 요구하며 프로세스 exit=0만으로 테스트 성공 처리하지 않는다.
 
@@ -122,6 +130,61 @@
 | TShirt-Armhole25-1 | 겨드랑이 경계점4개의 rest 높이만8mm 내린 사용자 편집 진단 원본.1200단계 후 봉제/관통0, 최대 변 길이 오차185.9%·면적비0.379~4.025로 실패. 실제 렌더 확인. 기본 템플릿의 암홀 치수는 유지함 |
 | FreshProjects-Checkpoint-5 | REQ-017 전달 전에 시작한 마지막 반복 인수. 최신 진단 재실행 코드를 포함한 Win64 선컴파일·새 C++ Editor 빌드·각37/37·저장 Cloth 재열기 통과. 이후 이 검증을 이번 범위의 반복 필수조건으로 사용하지 않음 |
 | ConvexCollision-Red | UE5.8 native Cloth의 convex 지원을 로컬 엔진에서 확인하고 생성/연속접촉/초기 면관통 회귀 추가. Editor 빌드 성공, 기존37개 통과·미구현3개 예상 실패(37/40). 실제 바디 Physics는 아직22개 기존 capsule/sphere로 보존됨 |
+| ConvexCollision-Green / Green-2 / Green-3 | factory friend의 DLL linkage 오류, ChaosCore 직접 링크 누락, GeometryCore face 추출용 neighbor 저장 누락을 순서대로 확인·수정. Green-3은 빌드 성공했으나 hull 생성 ensure로37/40. 통과로 취급하지 않음 |
+| ConvexCollision-Green-4 | Editor 빌드 및40/40 통과. 불변 native FConvex와 병합 polygon face, Chaos 거리·둥근 두께 sweep, capsule/convex 합집합 투영, 초기/최종 정점·면 관통 검사 구현. 실제 바디 애셋 연동은 아직 없음 |
+| ConvexNearSurface-Red / ConvexGrazingSurface-Red / ConvexNearSurface-Green | near-corner 외부 시작점에서 GJK의 보수적인 음수 진입값을 버려 반대편 외부로 관통하는 결함을 실제 UE에서 재현(각39/40). 해당 구간이 현재 이동을 포함하고 안쪽으로 이동하면 현재점 접촉으로 처리하여 Editor 빌드 및40/40 통과 |
+| ConvexPrecision-Red / ConvexPrecision-Green | 중심Z=1000cm·반두께.00001cm의 double hull이 native float에서 평면으로 붕괴해도 승인되는 회귀39/40. float 양자화 좌표에서 hull을 먼저 계산하여 거부·이전 결과 보존 확인. 최신 Editor 빌드 및40/40(오류/경고0) 통과 |
+| ConvexOutward-Red / ConvexOutward-Green / ConvexOutward-Green-2 | 보수적 음수 진입 구간에서 먼 진입면 법선을 사용해 바깥 이동을 막는 회귀39/40. 현재점의 거리 법선으로 수정. 첫 Green은 실제 접선 이동이 Y=0을 넘는 것을 관통으로 잘못 판정한 시험1개 실패. 양의 X면 유지·실제 외부 거리 기준으로 수정하고 결과좌표를 기록한 Green-2는 최신 Editor 빌드·40/40(오류/경고0) 통과 |
+| CommitCheckpoint-Native-Reopen | 기존 CA_NativePanelProbe의 새 프로세스 재열기 실패(exit9).312 particles/240frame runtime의 변위·관통은 허용 범위지만 savedGeometryMatchesSource=false여서 전체 실패. 해당 애셋을 최신 검증 완료 대상으로 커밋하지 않으며 삭제하지 않음 |
+| CookedConvex-Red / Green / Green-2 | 첫2회는 ReferenceSkeleton 헤더 경로 오류로 빌드 실패. 경로 수정 후 Editor 빌드 및41/41 통과. 실제 cooked convex의 회전/이동 본 계층, rounded corner 거리, 이동 차단, 잘못된 element transform·누락 cooked shape 거부와 결과 보존 확인. 첫 Red에서 동작 실패를 확인하지 못한 점을 구분 기록 |
+| ShoulderConvex-Red / Red-2 | 첫 실행은 TObjectPtr 반복 타입 빌드 오류. 수정 후 Editor 빌드 및40/41: 기존22capsule/sphere에서 새6convex 부재와 실제Z8.0cm 겨드랑이 틈 손실·clavicle 표면 포함 부족을 재현 |
+| ShoulderConvex-Import-1 | 실패(exit5), 저장 전 거부. 원본 표면의 조밀한 hull을 UE 기본 cooking이 병합하면서 polygon 정점과 plane이 불일치. 허용치를 완화하지 않음 |
+| ShoulderDOP-Build / ShoulderDOP-Import-1 / ShoulderDOP-Reopen | Editor 빌드 성공 후26방향 지지 평면으로 원본을 포함하는 다면체 생성. clavicle 각1개·위팔 각2개, native cooking 후 면/정점·폐곡면·원본 포함 검사를 통과하여 저장.19bodies/16capsule+sphere/6convex. 새 프로세스 전체41/41(오류/경고0) 통과: 실제Z7.8/8.0cm 겨드랑이 공기점·팔/쇄골/spine 원본 정점 포함·템플릿 고정점 이동 경로 확인. 대표 의상 및 변형 포즈는 별도 |
+| TShirt-ShoulderConvex-1 | 1200단계 완료 후 실패(exit7). 종료를 시도하기 전에 이미 정상 종료되어 실제로 중단한 프로세스는 없음. 봉제 간격.000059cm·정점 관통0이나 속도1.617cm/s·변 길이 오차283.9%·면 관통.04089cm·면적비.526~6.359. 실제 렌더 확인. 새 어깨 충돌체만으로 대표 의상 문제가 해결되지는 않음 |
+| CorrectionMap-Red | Editor 빌드 및41/42. native convex의 안전한 평면 구간 조기 제외/평면 접촉 경로 최적화 후 기존41개 통과. 새 수동 보정 시험은 generated correspondence 미구현에서 예상 실패 |
+| CorrectionMap-Green / Green-2 | 첫 빌드는 성공했으나 UE Windows의 미구현 GetSHA256Signature에서 assert/exit3, 보고서 생성 실패. 엔진 내장 OpenSSL의 SHA256으로 교체 후 Editor 빌드 및42/42(오류/경고0). 동일 원본의 stable generated/welded/joint ID, 실제 Cloth MaxDistance·skin 적용 및 재생성 재적용, topology 변경 시 원본 보존·미해결·출력 불변 확인. 이 내부 대응 해시는 아직 파일 계약의 canonical archive hash가 아님 |
+| CorrectionFailures-Red / Green | Editor 빌드42/43: 양수 double 웨이트가 native float에서0이 되어도 적용되던 회귀 실패. 표현 불가능한 웨이트를 거부하여43/43(오류/경고0). 존재하지 않는 정점/본·미지원 맵·중복 보정·고정점 해제·낡은 봉제·불완전 Cloth 맵도 원본/출력을 보존하며 거부 |
+| TShirt-ShoulderConvex-1/collision-section-audit.json | 실제 UE 표면과 capsule+convex 합집합의 독립 단면 비교. Z8.0cm의 틈은 복원되었지만 Z8.2cm에서는 실제0.160cm 틈을 아직 proxy가 메움. 두께 없는 단면 검사이며 전체 표면/움직임의 보장은 아님 |
+| DolphinShorts-Fit-1 | 실제 첫1200단계 피팅 실패. 속도0/정점 관통0이나 가랑이 봉제 간격1.30151cm·최대 변 길이 오차354.6%. 렌더 직접 확인. 원본 단면은 높이4.6/5.0/5.2cm에서 다리 사이 틈이 있으나 좌우 허벅지 capsule이 중앙을 .135~.198cm 관통하는 독립 진단 확인 |
+| TShirt-ConvexFast-1 | 최적화 후1200단계도 실패. 최대 변 길이 오차283.926%·봉제 간격.00000565cm·속도3.593cm/s. 동일한 겨드랑이 최악 변이 남음. native GJK 시작 구간 변경으로 수치 궤적까지 동일하다고 주장하지 않음 |
+| ShoulderDOP-Import-1/uv-gap-audit.json | UE 원본38174정점/73628면/16UV섬의 양의 면적 겹침0·퇴화0, 2K 외곽 최소50.097px·섬 경계 최소77.351px, 밀도 최대/최소1.00000488. 정확한 선분 거리의 교차/평행/일직선 경우도 별도 확인. 페인트 seam 시각 검증은 별도 |
+| ThighConvex-Red / Build / Import-1 / Reopen | Editor 빌드42/43: 기존 허벅지 capsule의 실제 틈 차단·원본 표면 누락 재현. 허벅지 각2개26방향 지지 convex를 native cooking·원본 포함 검사 후 저장.19bodies/14capsule+sphere/10convex, collisionFit0.3.4. 새 프로세스43/43(오류/경고0): 높이4.6/5.0/5.2cm 중앙에 최소.03cm 여유와 모든 refit dominant 표면 정점 포함. 생성기0.3.4-cooked-convex/플러그인0.3.4-dev |
+| DolphinShorts-ThighConvex-1 | 600단계 실패. 봉제 간격.44343cm·최대 변 길이 오차511.7%. 다리 틈 복원만으로 옷본의 불가능 길이는 해결되지 않음. 렌더 확인 |
+| ShortsAnchorLength-Red / PelvisConvex-Red | 실제 삼각분할 변 경로의 길이 상한(10%변형+.02cm봉제 허용)2.0801cm가 허리 고정점 간격3.6cm보다 작아43/44 실패. 골반 캡슐의 허리 공기점 차단·원본 표면 누락 회귀를 추가한 실행은42/44 |
+| PelvisAndShorts-Build / Build-2 / PelvisConvex-Import-1 / PelvisAndShorts-Green | 경로 시험 지역 변수 이름 충돌로 첫 빌드 실패, 수정 후 빌드 성공. 골반 각2구간 convex를 저장하여19bodies/13capsule+sphere/12convex(collisionFit0.3.5). 쇼츠 가랑이 깊이15mm(짧은 길이는 밑단과3mm 이상 분리), 허리 목표±1.1cm/Z6.4cm를 적용한 draft0.3.3. 새 프로세스44/44(오류/경고0), 고정점 이동 전 구간·길이 필요조건 통과. 실제 착장 성공과 구분 |
+| DolphinShorts-PelvisGuides-1 | 360단계 실패. 가랑이 봉제 간격.0000014cm·정점 관통0이나 최대 변 길이 오차142.6%·속도.1189cm/s. 렌더에서 봉제 개선 확인. 최악 변은 밑단 안쪽. 독립 단면에서 Z4.2cm 실제 내측Y.26565cm를 현재 proxy가Y.031cm까지 메움 |
+| ConvexVersion-Native-Save / Reopen | 오래된 CA_NativePanelProbe를 최신 생성기로 다시 저장하고 새 프로세스 재열기 통과. 원본 형상/UV/skin/map 동일성,312particles/240frame,최종 변위.0411868cm·정점 관통0. 이전 CommitCheckpoint의 source 불일치 해소. 두 패널 하위 경로이며 대표 의상 인수가 아님 |
+| ThighResolution-Red / Build / Import-1 / Green | Editor43/44로 밑단 높이의 과대 근사 재현. 허벅지 각4구간으로 저장하고 새 프로세스44/44 통과.19bodies/13capsule+sphere/16convex,collisionFit0.3.6. cooked capsule/convex도 body.json에 직접 내보냄 |
+| ThighResolution-Import-1/collision-surface-audit.json / BodyFaceCoverage-Red | 독립 검사에서 의상 접촉 영역29454면 중28894면만 단일 collider에 완전히 포함됨. 나머지560면의427개 추가 표면 샘플에서 최대.031723cm 외부 거리 하한 확인. 전체 미포함1167정점은 주로 이번 의상 접촉 영역 밖의 종아리/발이며 가슴4개도 발견. 실제 UE 회귀에서 동일560면 미포함 재현(43/45). 정점별 포함을 면 전체 포함으로 잘못 확대하지 않음 |
+
+| BodyFaceCoverage-Build / Import-1 / Green | 전체 접촉 삼각형 포함을 검증하는0.3.7 저장.29454/29454면의 포함은 증명했으나 자동화44/45: 겨드랑이/다리 공기 틈 과대 근사와 잘못된 primitive 기대 개수 실패. 실제 잔여 capsule/sphere는 head/neck/forearm/hand/calf/foot의10개이며 기존8개 표기는 오류 |
+| BodySupportResolution-Build / Import-1 / BodySupportCookDiagnostic-Build / Import-1 | 290방향 팔 polytope와 polar dual 교차 계산의 Editor 빌드 성공. 기본 native cook의 polygon-plane 오차.001193cm로 저장 전 거부. 허용치2e-4cm 유지 |
+| BodySupportSparse-Build / Import-1 | 50방향도 기본 cook 실패. 단계 진단에서 Build max오차5.386e-6cm→MergeFaces8.735e-4cm→MergeColinearEdges동일. 단순 정점 계산 오차와 면 병합 문제를 분리 |
+| BodySupportInflation-Build / Import-1 / Green / BodyPartitionDiagnostic-Build / Import-1 | 일정 면 오프셋이 만드는 작은 bevel 대신 내부 중심 기준 균일 확대를 적용해 저장 성공. 접촉면 전체 포함. 자동화44/45이며 구간 겹침 수정이 같은 코드의 capsule 위치에 적용된 오류를 좌표 대조로 발견. 이후 capsule 코드를 복원하고 convex 구간만 수정 |
+| BodyPartitionRanges-Build / Import-1 / BodyCanonicalHull-Build / Import-1 | 올바른 convex 구간 수정 및10개 primitive 기대값 정정. thigh_l 기본 cook의 면 오차.000218465cm로 저장 전 거부. 정점 공간 정렬만으로는 동일 실패. 기준 완화 없음 |
+| BodyCookPreflight-Build / Import-1 | 균일 확대와 일정 면 오프셋의 두 보존적 형상만 기본 native constructor로 사전 검사. thigh_l의 한 구간만 후자를 사용. 사전 객체를 저장에 재사용하지 않고 실제 PhysicsAsset 기본 cooking 후 표면 포함을 다시 검증. 다리 틈 복원됐지만 팔의 얕은 접평면 표현은 추가 개선 필요 |
+| BodyAngularSupport-Build / Import-1 / collision-surface-audit.json | 팔의 좌표 평면 방향을15도 간격으로 세분화한74방향, 나머지26방향. Editor 빌드 및 실제 저장 통과. collisionFit0.3.8,19bodies/10capsule+sphere/19convex. 독립 접촉면29454/29454포함, 미증명0. 전역 미포함1069정점은 종아리/발이며 이번 접촉 영역 밖. 전체 자동화 및 대표 의상 검증은 별도 |
+
+| BodyAngularSupport-Green | 새 UE 프로세스45/45(오류/경고0). 원본 접촉면 포함, Z7.8/8.0cm 겨드랑이 틈과 다리/허리/밑단 공기점 기준 통과. Z8.2cm 추가 공간·대표 의상 피팅 및 포즈는 아직 별도 문제로 남음 |
+| DolphinShorts-CompleteSurface-1 | 360단계 실패. 최대 변 길이 오차88.54%·속도4.736cm/s·면 관통.03049cm. 최악 변은 앞 허리 중앙 고정점 인접. 렌더 확인 |
+| DolphinShorts-WaistSides-1 / WiderHem-1 | 진단 문서만으로 양옆 허리 가이드 및 밑단 폭을 각각 비교. 각240단계 실패: 최대 변 길이 오차101.36% /137.64%, 속도12.418 /5.575cm/s. 두 렌더 확인. 실패한 비교본을 기본 템플릿에 적용하지 않음 |
+| ArmNegativeSpace-Red | 45/46. 실제 삼각형까지 .17282/.04840cm 떨어진 겨드랑이 지점에 반경.1/.03cm 공간을 요구하면 기존 cooked convex가 각각 .01376/−.19237cm밖에 확보하지 못하는 회귀 재현 |
+| ArmNegativeSpace-Build / Import-1 / ArmNegativeSpaceSimplified-Build / Import-1 | 전체 삼각형을 보호 공간별 지지 반공간으로 나누고 안전한 그룹을 병합. 두 빌드 성공, 기본 native cook의 float 면 오차로 저장 전 거부. 7개/팔에서4개/팔로 병합하고 불필요한 지원 방향을 줄여도 오른팔 한 영역의 .0002205cm 오차가2e-4cm 기준을 초과 |
+| ArmNegativeSpaceSupports-Build / Import-1 / Green | Editor 빌드·저장·새 프로세스46/46(오류/경고0). 오른팔 한 영역만6축+필수 공간 평면의 보존적 대안 사용, 나머지26방향+필수 평면. 실제 기본 native cooking 후 원본 포함·보호 공간·면 정밀도 재검사. collisionFit0.3.9,19bodies/10capsule+sphere/23convex. 독립 audit29454/29454접촉면 포함, 미증명0. 전역 미포함1069종아리/발정점은 이번 접촉 영역 밖 |
+| DolphinShorts-LongerRise-1 / LongerRise-NoGravity-1 | 진단 문서에서 상단을6mm 올리고 초기 배치를6mm 내려 초기 허리 높이를 유지. 중앙 밑위는21mm. 중력 포함360단계96.43%, 중력0인240단계90.17% 최대 변 길이 오차로 모두 실패. 최악 변은 동일한 옆 허리 인접45–46. 중력 포함 렌더 확인. 무중력은 초기 배치부터 별도 실행했으며 저장 snapshot의 정적 재실행은 아님 |
+| TShirt-ProtectedArmSpace-1 | 최신 겨드랑이 충돌체로240단계 실패. 최대 변 길이 오차229.28%·속도.5438cm/s·봉제 간격.0000062cm·정점 관통0. 렌더 확인. 최악 변384–57은 여전히 겨드랑이 |
+| ClearFitMotion-Diagnostic / Diagnostic-2 | 최초 진단 테스트의 TPair 초기화 컴파일 오류 수정 후 Editor 빌드 및47/47. 티셔츠/쇼츠 최악 변을 rest 길이 쪽으로 이동하는 두 경로가 각 convex의 동일 분리 평면과 capsule 선분 거리로 두께까지 확보됨을 증명하고 실제 SweepBodyCollision의 목표점 도달 확인. 직접 CCD 정지라는 가설을 배제했으며 전체 cloth 제약 수렴의 증명은 아님 |
+| ThighTaperSpace-Red | Editor 빌드47/48, 새8개 공기점 실패. Z3.8cm 실제 다리 둘레3.573cm에 비해 proxy4.776cm이며, 실제 표면 밖 .03cm 공기 구를 기존 thigh convex가 침범. 원본을 포함하는 동시에 과대 테이퍼 근사를 줄이는 수정 진행 중 |
+| ThighTaperSpace-Build / Import-1 / Green | 허벅지8구간 및15도 간격74방향으로 얕은 테이퍼 표현. Editor 빌드·저장·48/48 및 독립접촉면29454/29454포함. Z3.8cm 한쪽 proxy 단면 둘레3.872cm로 감소(두께 제외). 상부3영역이6축 fallback을 사용하여 추가 개선 대상 |
+| ThighTaperSupports-Build / Import-1 / Green | 허벅지의74방향과6축 사이에26방향 보존적 대안을 추가. 상부3영역이26방향을 사용하고 허벅지6축 사용0개. Editor 빌드·실제 저장·새 프로세스48/48(오류/경고0), 독립29454/29454접촉면 포함. collisionFit0.3.10,19bodies/10capsule+sphere/31convex. 같은 LongerRise 원본으로 실제 피팅 재실행 중 |
+| DolphinShorts-ThighTaper-1 | 같은 LongerRise 원본으로480단계 실패. 최대 변 길이 오차62.43%로 감소했으나10% 기준 초과, 속도.2018cm/s·봉제 간격.00000018cm·정점 관통0. 최악 변은 동일45–46. 실제 렌더 확인 |
+| BendingControl-Red / Green | 굽힘 정규화 입력의 유한성/범위 거부와 실제 효과를 검사한48/49 예상 실패 후 구현하여 Editor 빌드49/49(오류/경고0). 기본 반복당.05는 유지. 개발용 Run-Fit에서 굽힘0 비교와 반복 횟수 진단 가능하며 사용값을 보고서에 명시. 수렴/품질 기준 변경 없음 |
+| DolphinShorts-NoBending-1 | 굽힘0만 바꾼240단계 비교도 실패. 최대 변 길이 오차58.55%·속도.3216cm/s, 최악 변45–46 유지. 실제 렌더 확인. 굽힘 보정만으로 남은 옷본/충돌 조합을 설명할 수 없음 |
+| TShirt-DeeperArmhole-1 | 겨드랑이 깊이17→22mm만 바꾼360단계 비교 실패. 최대 변 길이 오차132.29%로 감소했지만 최악 변은 목둘레의 어깨 고정점 인접143–144로 이동. 실제 렌더 확인. 해당 반쪽 목 경계 원본1.73930cm/정착1.99439cm로14.67% 길이 차이가 있어 목 깊이4→6mm 비교를 준비 |
+
+독립 피팅 진단: 저장된 쇼츠의 pin/structural/seam만5,000회 반복하면 기본/양옆 가이드의 최대 변 길이 오차가4.24%/2.88%까지 내려가지만 바디를 .3249/.4062cm 관통한다. 앞 허리 pin→공유 가랑이의 rest 최단 경로1.52924cm에 비해 현재 배치의 직선거리부터1.81264cm여서 해당 배치에서는10% 기준을 충족할 수 없다. 모든3D 배치의 불가능성 증명은 아니며, 다음 비교는 밑단 폭보다 중앙 밑위 길이이다.
+
+커밋 조율: `Saved/CommitCoordination/safe-body-snapshot-20261016.json`의15개 파일을 게임 대화가 `a9fe0ac`로 커밋했고 동결 해제를 전달했다. 커밋 내용을 읽어 확인했다. 이 대화에서는 stage/commit하지 않았다. 조율 종료 후 구현을 이어가지 못한 중단을 사용자 지적 후 인정하고 Task 1~3 작업을 재개했다. 이 manifest는 해당 커밋 시점의 스냅샷이며 이후 바디 수정의 최신 해시로 사용하지 않는다.
 
 구현: 단일 루프 검증, 제약 Delaunay 삼각분할 및 선택적 공유 경계 세분화, 원본 edge 대응, mm→cm 단일 변환, 문서의 cubic arclength·notch·부분 봉제·ease 대응, 네이티브 constrained relaxation, capsule 충돌, 명시적 고정점, 수렴 실패 차단, rest/initial/settled 분리, 2K UV atlas(섬간 32px·외곽 16px·동일 rest 밀도), Cloth Collection 생성. EaseRatio는 LengthA = EaseRatio × LengthB이며 LengthToleranceMm으로 검증한다.
 

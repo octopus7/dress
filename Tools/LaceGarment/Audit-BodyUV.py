@@ -43,6 +43,30 @@ def intersection_area(subject, clip):
     return area(output) if len(output) >= 3 else 0.0
 
 
+def boundary_distance(first, second):
+    """Exact 2D segment distance, including crossing boundaries, in bounded batches."""
+    best = math.inf
+    def point_distance(p, a, b):
+        d = b - a
+        t = np.clip(np.sum((p-a)*d, axis=-1) / np.maximum(np.sum(d*d, axis=-1), 1e-30), 0, 1)
+        return np.sum((p-a-t[..., None]*d)**2, axis=-1)
+    for start in range(0, len(first), 128):
+        a = first[start:start+128, None, 0]
+        b = first[start:start+128, None, 1]
+        c, d = second[None, :, 0], second[None, :, 1]
+        distances = np.minimum.reduce([point_distance(a,c,d), point_distance(b,c,d), point_distance(c,a,b), point_distance(d,a,b)])
+        ab, cd = b-a, d-c
+        cross2 = lambda u,v: u[...,0]*v[...,1]-u[...,1]*v[...,0]
+        divisor = cross2(ab,cd)
+        nonparallel = np.abs(divisor)>1e-20
+        safe = np.where(nonparallel,divisor,1)
+        t, u = cross2(c-a,cd)/safe, cross2(c-a,ab)/safe
+        if np.any(nonparallel & (t>=0) & (t<=1) & (u>=0) & (u<=1)):
+            return 0.0
+        best = min(best,float(distances.min()))
+    return math.sqrt(best)
+
+
 def audit(data):
     positions = np.asarray(data['positionsCm'], dtype=np.float64)
     uv = np.asarray(data['uv0'], dtype=np.float64)
@@ -86,9 +110,13 @@ def audit(data):
         return x
     keys = [tuple(p) + tuple(t) for p, t in zip(positions, uv)]
     edges = {}
+    edge_counts = defaultdict(int)
+    edge_uv = {}
     for i, face in enumerate(faces):
         for k in range(3):
             key = tuple(sorted((keys[face[k]], keys[face[(k + 1) % 3]])))
+            edge_counts[key] += 1
+            edge_uv[key] = uv[[face[k],face[(k+1)%3]]]
             if key in edges:
                 parent[root(i)] = root(edges[key])
             else:
@@ -96,6 +124,14 @@ def audit(data):
     charts = defaultdict(list)
     for i in range(len(faces)):
         charts[root(i)].append(i)
+    boundaries = defaultdict(list)
+    for key, count in edge_counts.items():
+        if count==1:
+            boundaries[root(edges[key])].append(edge_uv[key])
+    boundary_arrays = [np.asarray(boundaries[chart]) for chart in charts]
+    if any(len(boundary)==0 for boundary in boundary_arrays):
+        raise ValueError('A UV chart has no boundary')
+    minimum_gap = min((boundary_distance(a,b) for i,a in enumerate(boundary_arrays) for b in boundary_arrays[i+1:]),default=1.0)*2048
     chart_stats = []
     for ids in charts.values():
         ua, wa = float(uv_area[ids].sum()), float(world_area[ids].sum())
@@ -104,11 +140,11 @@ def audit(data):
     density_ratio = max(density) / min(density) if density and min(density) > 0 else math.inf
     padding = float(min(uv.min(), 1 - uv.max()) * 2048)
     degenerate = int(np.count_nonzero((uv_area <= 1e-14) | (world_area <= 1e-14)))
-    passed = not overlaps and not degenerate and padding >= 16 - 1e-4 and density_ratio <= 1.02
-    return {'passed': passed, 'scope': 'Imported UE LOD0 UV0; exact positive-area triangle clipping, chart area density, outer padding. Island separation distance and paint seam visual QA remain separate.',
+    passed = not overlaps and not degenerate and padding >= 16 - 1e-4 and minimum_gap >= 32 - 1e-4 and density_ratio <= 1.02
+    return {'passed': passed, 'scope': 'Imported UE LOD0 UV0; positive-area triangle clipping, chart area density, outer padding and minimum chart boundary distance. Paint seam visual QA remains separate.',
             'vertices': len(positions), 'triangles': len(faces), 'charts': len(chart_stats), 'testedPairs': tested,
             'positiveAreaOverlaps': len(overlaps), 'overlapExamples': overlaps[:20], 'degenerateTriangles': degenerate,
-            'outerPaddingPixels2048': padding, 'maxToMinChartDensityRatio': density_ratio, 'chartMetrics': chart_stats}
+            'outerPaddingPixels2048': padding, 'minimumIslandGapPixels2048': minimum_gap, 'maxToMinChartDensityRatio': density_ratio, 'chartMetrics': chart_stats}
 
 
 if __name__ == '__main__':

@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 
 
-def audit(body_path, fit_path):
+def audit(body_path, fit_path, heights=(6.6, 7.0, 7.4, 7.8, 8.0, 8.2, 8.4, 8.6, 9.0, 9.5)):
     body = json.loads(body_path.read_text(encoding="utf-8-sig"))
     fit = json.loads(fit_path.read_text(encoding="utf-8-sig"))
     vertices = np.asarray(body["positionsCm"], dtype=float)
@@ -18,7 +18,7 @@ def audit(body_path, fit_path):
     determinant = edge_a[:, 0] * edge_b[:, 1] - edge_a[:, 1] * edge_b[:, 0]
     valid = np.abs(determinant) > 1e-10
     sections = []
-    for height in (6.6, 7.0, 7.4, 7.8, 8.0, 8.2, 8.4, 8.6, 9.0, 9.5):
+    for height in heights:
         delta = np.array([0.0, height]) - origin
         a = np.zeros(len(triangles))
         b = np.zeros(len(triangles))
@@ -34,6 +34,9 @@ def audit(body_path, fit_path):
             axis = np.asarray(capsule["bCm"]) - start
             closest = start + np.clip((points - start) @ axis / max(axis @ axis, 1e-12), 0, 1)[:, None] * axis
             inside |= np.linalg.norm(points - closest, axis=1) < capsule["radiusCm"]
+        for convex in fit.get("convexes", []):
+            planes = np.asarray(convex["planesCm"], dtype=float)
+            inside |= np.all(points @ planes[:, :3].T <= planes[:, 3], axis=1)
         transitions = (np.flatnonzero(inside[:-1] != inside[1:]) / 1000).tolist()
         sections.append({"xCm": 0, "zCm": height, "meshPositiveYIntersectionsCm": mesh_edges,
                          "proxyInsideAtYZero": bool(inside[0]), "proxyPositiveYTransitionsCm": transitions})
@@ -49,10 +52,11 @@ if __name__ == "__main__":
     parser.add_argument("body", type=Path)
     parser.add_argument("fit", type=Path)
     parser.add_argument("output", type=Path)
+    parser.add_argument("--heights", nargs="+", type=float)
     arguments = parser.parse_args()
     if arguments.output.exists():
         parser.error("Refusing to overwrite an existing audit")
-    report = audit(arguments.body, arguments.fit)
+    report = audit(arguments.body, arguments.fit, arguments.heights) if arguments.heights else audit(arguments.body, arguments.fit)
     arguments.output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     for section in report["sections"]:
         print(section)
