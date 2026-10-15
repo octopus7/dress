@@ -1,0 +1,49 @@
+# Unreal Engine generated files (includes local packages, saves and test runs).
+/Binaries/
+/DerivedDataCache/
+/Intermediate/
+/Saved/
+/Plugins/*/Binaries/
+/Plugins/*/Intermediate/
+
+# Keep Build resources such as icons; only exclude generated file-order logs.
+/Build/**/FileOpenOrder/
+
+# Local IDE state and generated solutions.
+.vs/
+.idea/
+*.sln
+*.slnx
+*.suo
+*.opensdf
+*.sdf
+*.VC.db
+*.VC.opendb
+*.code-workspace
+*.vcxproj.user
+
+# Python bytecode and tool caches.
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+
+# Blender automatic backups. The .blend originals remain versioned.
+*.blend[0-9]*
+
+# Generated art QA captures and validation reports.
+/ArtSource/**/QA/
+/ArtSource/Dummy/UVValidation.json
+/ArtSource/Dummy/PaintValidation.json
+
+# OS-generated metadata.
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Do not ignore Content/*.uasset or *.umap, ArtSource originals/test inputs,
+# Source, Config, Docs, Tools, .uproject/.uplugin, or .vsconfig.
+# PluginDev/LaceGarmentHost has its own project-specific .gitignore.
