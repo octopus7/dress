@@ -1,0 +1,296 @@
+{
+  "version": "blockout-1",
+  "status": "provisional_until_S3",
+  "unit": "cm",
+  "height": 15.0,
+  "source": "actual mesh section convex contour, arm regions excluded",
+  "chest_circumference": 9.365228033627892,
+  "waist_circumference": 6.663436225166728,
+  "hip_circumference": 8.069222601966194,
+  "vertices": 36436,
+  "skeleton_version": 1,
+  "unweighted_vertices": 0,
+  "maximum_influences": 4,
+  "bones": [
+    {
+      "name": "root",
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "tail": [
+        0,
+        0,
+        1
+      ],
+      "parent": null
+    },
+    {
+      "name": "pelvis",
+      "head": [
+        0,
+        0,
+        5.9
+      ],
+      "tail": [
+        0,
+        0,
+        7
+      ],
+      "parent": "root"
+    },
+    {
+      "name": "spine_01",
+      "head": [
+        0,
+        0,
+        7
+      ],
+      "tail": [
+        0,
+        0,
+        8.3
+      ],
+      "parent": "pelvis"
+    },
+    {
+      "name": "chest",
+      "head": [
+        0,
+        0,
+        8.3
+      ],
+      "tail": [
+        0,
+        0,
+        9.3
+      ],
+      "parent": "spine_01"
+    },
+    {
+      "name": "neck",
+      "head": [
+        0,
+        0,
+        9.3
+      ],
+      "tail": [
+        0,
+        0,
+        10.5
+      ],
+      "parent": "chest"
+    },
+    {
+      "name": "head",
+      "head": [
+        0,
+        0,
+        10.5
+      ],
+      "tail": [
+        0,
+        0,
+        14.2
+      ],
+      "parent": "neck"
+    },
+    {
+      "name": "clavicle_l",
+      "head": [
+        0,
+        0,
+        9.2
+      ],
+      "tail": [
+        1.48,
+        0,
+        9.15
+      ],
+      "parent": "chest"
+    },
+    {
+      "name": "upperarm_l",
+      "head": [
+        1.48,
+        0,
+        9.15
+      ],
+      "tail": [
+        2.88,
+        0,
+        7.51
+      ],
+      "parent": "clavicle_l"
+    },
+    {
+      "name": "forearm_l",
+      "head": [
+        2.88,
+        0,
+        7.51
+      ],
+      "tail": [
+        4.07,
+        -0.04,
+        6.1
+      ],
+      "parent": "upperarm_l"
+    },
+    {
+      "name": "hand_l",
+      "head": [
+        4.07,
+        -0.04,
+        6.1
+      ],
+      "tail": [
+        4.58,
+        -0.12,
+        5.5
+      ],
+      "parent": "forearm_l"
+    },
+    {
+      "name": "thigh_l",
+      "head": [
+        0.85,
+        0,
+        6.2
+      ],
+      "tail": [
+        0.96,
+        -0.07,
+        3.48
+      ],
+      "parent": "pelvis"
+    },
+    {
+      "name": "calf_l",
+      "head": [
+        0.96,
+        -0.07,
+        3.48
+      ],
+      "tail": [
+        0.98,
+        0.02,
+        0.9
+      ],
+      "parent": "thigh_l"
+    },
+    {
+      "name": "foot_l",
+      "head": [
+        0.98,
+        0.02,
+        0.9
+      ],
+      "tail": [
+        0.98,
+        -1.2,
+        0.35
+      ],
+      "parent": "calf_l"
+    },
+    {
+      "name": "clavicle_r",
+      "head": [
+        0,
+        0,
+        9.2
+      ],
+      "tail": [
+        -1.48,
+        0,
+        9.15
+      ],
+      "parent": "chest"
+    },
+    {
+      "name": "upperarm_r",
+      "head": [
+        -1.48,
+        0,
+        9.15
+      ],
+      "tail": [
+        -2.88,
+        0,
+        7.51
+      ],
+      "parent": "clavicle_r"
+    },
+    {
+      "name": "forearm_r",
+      "head": [
+        -2.88,
+        0,
+        7.51
+      ],
+      "tail": [
+        -4.07,
+        -0.04,
+        6.1
+      ],
+      "parent": "upperarm_r"
+    },
+    {
+      "name": "hand_r",
+      "head": [
+        -4.07,
+        -0.04,
+        6.1
+      ],
+      "tail": [
+        -4.58,
+        -0.12,
+        5.5
+      ],
+      "parent": "forearm_r"
+    },
+    {
+      "name": "thigh_r",
+      "head": [
+        -0.85,
+        0,
+        6.2
+      ],
+      "tail": [
+        -0.96,
+        -0.07,
+        3.48
+      ],
+      "parent": "pelvis"
+    },
+    {
+      "name": "calf_r",
+      "head": [
+        -0.96,
+        -0.07,
+        3.48
+      ],
+      "tail": [
+        -0.98,
+        0.02,
+        0.9
+      ],
+      "parent": "thigh_r"
+    },
+    {
+      "name": "foot_r",
+      "head": [
+        -0.98,
+        0.02,
+        0.9
+      ],
+      "tail": [
+        -0.98,
+        -1.2,
+        0.35
+      ],
+      "parent": "calf_r"
+    }
+  ]
+}

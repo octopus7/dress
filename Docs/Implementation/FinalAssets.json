@@ -1,0 +1,337 @@
+[
+  {
+    "path": "ArtSource/Development/ClothProbe.json",
+    "bytes": 68262,
+    "sha256": "CC14AA309810CF36D9B590F43EB8E30A18BC64C5F4C75D57C190B86DFA7713E2"
+  },
+  {
+    "path": "ArtSource/Dummy/Candidate_PreUV.blend",
+    "bytes": 1706776,
+    "sha256": "3BC36754D4E77EAE508732EE9FCCC3E7ADAB94BE3A8041C545AB8EC6E89DA610"
+  },
+  {
+    "path": "ArtSource/Dummy/LaceLoftDummy.blend",
+    "bytes": 2403034,
+    "sha256": "0D338E8CEC1A4BA8D5239F350F98BBD416742076F0CC04751601B1657CD449CA"
+  },
+  {
+    "path": "ArtSource/Dummy/LaceLoftDummy.fbx",
+    "bytes": 2228732,
+    "sha256": "376E1AD7A84F64AB595C305CCD01C57427FDFEA41D7C98C05F9387FE566C5B90"
+  },
+  {
+    "path": "ArtSource/Dummy/Measurements.json",
+    "bytes": 41968,
+    "sha256": "4082CCCC39FD33245068A235FFD502C83256079793ECD1B96BC9E41C295ECDC2"
+  },
+  {
+    "path": "ArtSource/Dummy/PaintValidation.json",
+    "bytes": 674,
+    "sha256": "9C5A0B9ED82B9BB4D6A5603D6C53E64BEDA2C8295B314057ABBCC99A150F2F75"
+  },
+  {
+    "path": "ArtSource/Dummy/UVTriangles.json",
+    "bytes": 26857164,
+    "sha256": "B3B7783C5070688A1391CA82CB3CAE3F48257EE75A63092DBE9933D9DD2EF35A"
+  },
+  {
+    "path": "ArtSource/Dummy/UVValidation.json",
+    "bytes": 4589,
+    "sha256": "5AEFFB5E6D22331B984BCB19010A0D5E53C1FFB4E243C5A8C829199DDD280D95"
+  },
+  {
+    "path": "ArtSource/Garments/DolphinShorts_UE_Mapping.json",
+    "bytes": 277324,
+    "sha256": "829D68F5D3880848C1928168D6D4E28ECF6D24053A7115766E31BEDB6F87D999"
+  },
+  {
+    "path": "ArtSource/Garments/LaceLoftGarments.blend",
+    "bytes": 2534717,
+    "sha256": "BCFF0514EAC6EE5DE292EB36837DC7117E9446072B7208808C51FD18205BCAB5"
+  },
+  {
+    "path": "ArtSource/Garments/TShirt_UE_Mapping.json",
+    "bytes": 271441,
+    "sha256": "A036CE56DE75144D98D18BA9B58FE2A7B55764FEBEE9FAADB325472EA50B540C"
+  },
+  {
+    "path": "ArtSource/Patterns/DolphinShorts.json",
+    "bytes": 276814,
+    "sha256": "AC34ECC7037C88BE77785E89EEA4D1CC12231FCDAB62524BD78AA7FA483FD6AE"
+  },
+  {
+    "path": "ArtSource/Patterns/TShirt.json",
+    "bytes": 244094,
+    "sha256": "4E514BCD684996B5AF0923259203334EC648C0CD9FF32BCA778D1551F5C942F4"
+  },
+  {
+    "path": "Content/Characters/Dummy/Animation/A_DummyArmsForward.uasset",
+    "bytes": 26311,
+    "sha256": "B1A4F2C471ADF76C960AA2A8A897816A2BF98DCB48838E6F84DC4CB02DA7D4B5"
+  },
+  {
+    "path": "Content/Characters/Dummy/Animation/A_DummyArmsRaised.uasset",
+    "bytes": 26307,
+    "sha256": "238ED3F63B3DAC1749707358363EFB1A2439EDD1C2558CA1A12F1CC2BE375905"
+  },
+  {
+    "path": "Content/Characters/Dummy/Animation/A_DummyElbowKnee90.uasset",
+    "bytes": 26311,
+    "sha256": "55E43979B418017E9A75E35622EC8C84D2C746BE658EF2A35416E8A593761EE1"
+  },
+  {
+    "path": "Content/Characters/Dummy/Animation/A_DummyHeadTurn.uasset",
+    "bytes": 26299,
+    "sha256": "C5298B37A4F4EC1CA82AFDA8A6C36EB191B02DE49BA1E3D94CF1DA92F62AD219"
+  },
+  {
+    "path": "Content/Characters/Dummy/Animation/A_DummyNeutral.uasset",
+    "bytes": 26295,
+    "sha256": "CE683CBDFC9DC062F79E81B5F274C4762A42DC9F745B2F32DB1743692E48D30F"
+  },
+  {
+    "path": "Content/Characters/Dummy/Animation/A_DummySitting.uasset",
+    "bytes": 26295,
+    "sha256": "06B6299B316B31D691B0C1EE57E95EABF45A0DA80E5565F4F590429C043D27D4"
+  },
+  {
+    "path": "Content/Characters/Dummy/Animation/ABP_Dummy.uasset",
+    "bytes": 24286,
+    "sha256": "F7DD3EBBEF5F05DC53F7A699D5ABB97E8390E806EDFE018B8A95348615EE813A"
+  },
+  {
+    "path": "Content/Characters/Dummy/Animation/DA_DummyJointLimits.uasset",
+    "bytes": 3025,
+    "sha256": "B2D07B06FA57208B98D13E0E6C6A6A5FBD3A8015092D3044C8C41C005466C0FA"
+  },
+  {
+    "path": "Content/Characters/Dummy/Animation/PA_DummyPoses.uasset",
+    "bytes": 26910,
+    "sha256": "7D78C69B5BA863FE1C9943E6D37A6D59A510067E59C2BBC9939FC1B66C658F3F"
+  },
+  {
+    "path": "Content/Characters/Dummy/Materials/M_Dummy.uasset",
+    "bytes": 5700,
+    "sha256": "7BE6CAEFC75A4BEAA8D09B0FC6A06FF75EADA8E2EE71E17C33903D476CF0C3FA"
+  },
+  {
+    "path": "Content/Characters/Dummy/Materials/M_WireframeOverlay.uasset",
+    "bytes": 6184,
+    "sha256": "9801C25DD06DF6291515AC0CFDC1C667759B4CD2B8AC81A7D6B6F083B4861982"
+  },
+  {
+    "path": "Content/Characters/Dummy/Materials/MI_DummyAsymmetric_1024.uasset",
+    "bytes": 3407,
+    "sha256": "194FA1AAA7F9EBA0AC2349BE3A730710C466AF29AABD4C434AC5B19758739CA8"
+  },
+  {
+    "path": "Content/Characters/Dummy/Materials/MI_DummyAsymmetric_2048.uasset",
+    "bytes": 3407,
+    "sha256": "390F3E944E413B7A1EA98BA70D60C6911FAD2807D7A440FF457B0629A55AEDA1"
+  },
+  {
+    "path": "Content/Characters/Dummy/Materials/MI_DummyAsymmetric_512.uasset",
+    "bytes": 3404,
+    "sha256": "7FBAF0F72B6D416B5819BFE40A3EFFC41800B430272DA7FD2B5D3D228794751E"
+  },
+  {
+    "path": "Content/Characters/Dummy/Materials/MI_DummyChecker_1024.uasset",
+    "bytes": 3386,
+    "sha256": "A87EADC1EAD227B9EB75BB74C2E0307FA52EEDAB37D7BEC547D2F9CEEF55AA7E"
+  },
+  {
+    "path": "Content/Characters/Dummy/Materials/MI_DummyChecker_2048.uasset",
+    "bytes": 3386,
+    "sha256": "1358A24BB74BC0E83B4D551B5909C8F64F52B1FB347F2FECEC8CF800988E96FA"
+  },
+  {
+    "path": "Content/Characters/Dummy/Materials/MI_DummyChecker_512.uasset",
+    "bytes": 3383,
+    "sha256": "793FD3FB66D936A5D611FBF3189DB3C0DF77AD03885CE45B926DDCB7B82FF4EF"
+  },
+  {
+    "path": "Content/Characters/Dummy/Materials/MI_DummyWhite.uasset",
+    "bytes": 3357,
+    "sha256": "2BBD8A0FADB56655B68C4652D862CCE2AF559DCF41B32B9118435FA0459672FF"
+  },
+  {
+    "path": "Content/Characters/Dummy/Materials/T_DummyAsymmetric_1024.uasset",
+    "bytes": 61056,
+    "sha256": "B76602BF37839519432457B7C935BF02BCF5D33DCE5194030EBF2B7ABDDDC5B7"
+  },
+  {
+    "path": "Content/Characters/Dummy/Materials/T_DummyAsymmetric_2048.uasset",
+    "bytes": 69971,
+    "sha256": "2CE346EBFF06045A3011C3145D471909E350D76BEAEF0E855DF2BB5ED29794FF"
+  },
+  {
+    "path": "Content/Characters/Dummy/Materials/T_DummyAsymmetric_512.uasset",
+    "bytes": 38757,
+    "sha256": "D4273C4BF78F5351C4F18E1AE6D9A21F266C2802E896092AAD3DA08495171D33"
+  },
+  {
+    "path": "Content/Characters/Dummy/Materials/T_DummyChecker_1024.uasset",
+    "bytes": 6221,
+    "sha256": "CA57921B29C4421394E492569694DDB97D873FE7787FD75141DAC9D23453FBFB"
+  },
+  {
+    "path": "Content/Characters/Dummy/Materials/T_DummyChecker_2048.uasset",
+    "bytes": 10963,
+    "sha256": "3604B921D7A3994DBE6EB90C29E4A8E8210DB052686FCDAC10DF2C50B470292C"
+  },
+  {
+    "path": "Content/Characters/Dummy/Materials/T_DummyChecker_512.uasset",
+    "bytes": 5222,
+    "sha256": "0DA57E82EC1B303D5D4FADFEDB52E99137394B7722D830C019B706AC67F2A8FA"
+  },
+  {
+    "path": "Content/Characters/Dummy/Materials/T_DummyWhite.uasset",
+    "bytes": 5987,
+    "sha256": "5B84ADC2C7A1BD2A4774BE6C8FEBDCD09B3EFC8C49BD2118A285C86F188D9CB6"
+  },
+  {
+    "path": "Content/Characters/Dummy/PHYS_Dummy.uasset",
+    "bytes": 18882,
+    "sha256": "E6F5F6820380404C54C8F508FF50F58C29A36FC93DD989A55EA49DCF2BA13E27"
+  },
+  {
+    "path": "Content/Characters/Dummy/SK_Dummy.uasset",
+    "bytes": 9189392,
+    "sha256": "B1F59510BFB185D6E23D832B6CE43EC326375C008EA60FECFD437487345A8630"
+  },
+  {
+    "path": "Content/Characters/Dummy/SKEL_Dummy.uasset",
+    "bytes": 5816,
+    "sha256": "4281F6CC6B7B062135B0F516B3A3A5C28E95B3F6FD37EC85D8A400CCB4EBC427"
+  },
+  {
+    "path": "Content/Development/ClothProbe/CA_TShirtProbe.uasset",
+    "bytes": 300797,
+    "sha256": "26F8145A1D57FCE09059C6180620866190F47096E0F1B12152DF125AF158DC31"
+  },
+  {
+    "path": "Content/Development/ClothProbe/DF_TShirtProbe.uasset",
+    "bytes": 277069,
+    "sha256": "0716444DE1A9E91F266B33C356C86F99972AFE892C16F9D2B45921EC6D72F6FC"
+  },
+  {
+    "path": "Content/Development/ClothProbe/L_ClothProbe.umap",
+    "bytes": 18378,
+    "sha256": "1D014E9B106298F43FF11B288B23EFDBEB8E646C5CC7563B1E13BCDA930187B1"
+  },
+  {
+    "path": "Content/Development/ClothProbe/M_ProbeCloth.uasset",
+    "bytes": 5066,
+    "sha256": "79CEF50B83AEB4813F55EFC9CD96404A506385A27B2517CC53E78C64CC20D82C"
+  },
+  {
+    "path": "Content/Development/ClothProbe/M_ProbeDummy.uasset",
+    "bytes": 4973,
+    "sha256": "252B92ACCC33CD971E836A0B8A21E4C5C97339461A34DC510D6A44D1DE9A6564"
+  },
+  {
+    "path": "Content/Garments/Cloth/CA_DolphinShorts.uasset",
+    "bytes": 552155,
+    "sha256": "04AB68B348A62603EBEA00C282EF7C10BD02004035FBF4A4A038542002DA775C"
+  },
+  {
+    "path": "Content/Garments/Cloth/CA_TShirt.uasset",
+    "bytes": 530946,
+    "sha256": "8ADF129F4600BEC67C6A90DD9BFB79CE3E9573505E0E024D6E40D3D7F2A9FC80"
+  },
+  {
+    "path": "Content/Garments/Cloth/DF_DolphinShorts.uasset",
+    "bytes": 508060,
+    "sha256": "17096C1AD387EB99F300412B2B2BFB9C6674E665E7307D8F82906FDEEAD80ADB"
+  },
+  {
+    "path": "Content/Garments/Cloth/DF_TShirt.uasset",
+    "bytes": 490111,
+    "sha256": "1859A8440E374F52D7EFFD7C55AE95139BAB4E81141607463E4F8965C2635F2B"
+  },
+  {
+    "path": "Content/Garments/Materials/M_DolphinShorts.uasset",
+    "bytes": 5073,
+    "sha256": "F022D3F224E543A39ECA8635C66C968F340D8EF7FE9B22D73D08A159B7FF5594"
+  },
+  {
+    "path": "Content/Garments/Materials/M_GarmentTrim.uasset",
+    "bytes": 5063,
+    "sha256": "371A266514B1003536D3FC26163EE93385F2245D30E18A7922AF6708A8DCB42A"
+  },
+  {
+    "path": "Content/Garments/Materials/M_TShirt.uasset",
+    "bytes": 5038,
+    "sha256": "0817473B743EF8B5CCC3B6EEC3C31F3338659734B95EA2E5A6EB9B6CBCC6E182"
+  },
+  {
+    "path": "Content/Garments/Patterns/DA_DolphinShorts.uasset",
+    "bytes": 199824,
+    "sha256": "74E03818956601295932347FDA67D9EEA64C42FA4CAC689A8522B472ACF98542"
+  },
+  {
+    "path": "Content/Garments/Patterns/DA_TShirt.uasset",
+    "bytes": 177335,
+    "sha256": "EBCB6A6B9B3ED62AB9A00497CF5001C3CD73BBF939CD4F749FFBDEF54D6D9941"
+  },
+  {
+    "path": "Content/Maps/L_FittingRoom.umap",
+    "bytes": 18926,
+    "sha256": "E993E08C74CE164F884155AAE22BB201FDBE6484D1677BF12796805509419AC0"
+  },
+  {
+    "path": "Content/Maps/L_GarmentCreation.umap",
+    "bytes": 6020,
+    "sha256": "8D846FB8CB349B4450E0C0D8F762265E5E5FD3A935188B68DE8B6F9FCD0BB4BA"
+  },
+  {
+    "path": "Content/Maps/L_Title.umap",
+    "bytes": 5970,
+    "sha256": "97E4B8B33188CB7B4ECF881FEC7DA1A720083EA22300992BDE05B68B5E6270A5"
+  },
+  {
+    "path": "Content/UI/WBP_ConfirmDialog.uasset",
+    "bytes": 37118,
+    "sha256": "0DCC20EDCABDB3AE53D29A0A7D1811BA7106132698E1C5F6E120D8606BA91DA4"
+  },
+  {
+    "path": "Content/UI/WBP_FittingRoom.uasset",
+    "bytes": 74242,
+    "sha256": "9636A7309868FC8011BF91934089D031E45E225E6BAB15C7705FAFB5F77FB2B2"
+  },
+  {
+    "path": "Content/UI/WBP_GarmentCreation.uasset",
+    "bytes": 106029,
+    "sha256": "9B5D8C1407D66B60D996F9D84763D3ADA6A1644953D898055C06040B51A8E2BD"
+  },
+  {
+    "path": "Content/UI/WBP_GarmentEntry.uasset",
+    "bytes": 24193,
+    "sha256": "7B4510C04A0698A159666B2AAD63BCBE5B22FF9BF96F799717A9A81B5697806E"
+  },
+  {
+    "path": "Content/UI/WBP_PatternPieceEntry.uasset",
+    "bytes": 24253,
+    "sha256": "8541CA8DB69B0AF0BACD3895F3B0C4146F0F676793DB1147FAD07E65ADAE5C40"
+  },
+  {
+    "path": "Content/UI/WBP_PatternWorkspace.uasset",
+    "bytes": 23961,
+    "sha256": "65CC980DFD3F6FEED7FFA5E59DD3FFA5719FCFFD402E825AA86CEFBAEE5143CE"
+  },
+  {
+    "path": "Content/UI/WBP_PoseControls.uasset",
+    "bytes": 62502,
+    "sha256": "940D44D45471CA6AB3C5B4C8C67EA701D504FCE279EF383C9426A226B01B3453"
+  },
+  {
+    "path": "Content/UI/WBP_SewingStepEntry.uasset",
+    "bytes": 24229,
+    "sha256": "9AAE27B9A5F7E9E88EA7D9C8FD95EBC10CAD963116BD2B170C07896BA344729B"
+  },
+  {
+    "path": "Content/UI/WBP_Title.uasset",
+    "bytes": 49442,
+    "sha256": "54158C02FA72ECE95F8DAA7D4C2D113EEC6DEDB3A5944D7A90206A84678E705B"
+  }
+]
