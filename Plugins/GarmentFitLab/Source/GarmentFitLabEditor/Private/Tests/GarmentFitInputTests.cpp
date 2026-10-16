@@ -15,6 +15,9 @@
 #include "Engine/Level.h"
 #include "GameFramework/WorldSettings.h"
 #include "ReferenceSkeleton.h"
+#include "Animation/Skeleton.h"
+#include "Materials/Material.h"
+#include "Rendering/SkeletalMeshRenderData.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -124,14 +127,68 @@ bool FGarmentFitSavedAssetsTest::RunTest(const FString& Parameters)
             if (AGarmentFitPreviewActor* SavedPreview = Cast<AGarmentFitPreviewActor>(Candidate))
             {
                 ++PreviewCount;
-                TestTrue(TEXT("Saved input remains unassigned until user provides it"), SavedPreview->InputMesh.IsNull());
+                USkeletalMesh* Character = Cast<USkeletalMesh>(SavedPreview->InputMesh.LoadSynchronous());
+                TestNotNull(TEXT("Supplied Mk2 input reopens as a skeletal mesh"), Character);
+                TestEqual(TEXT("Only the supplied Mk2 is assigned"), SavedPreview->InputMesh.ToSoftObjectPath().ToString(),
+                    FString(TEXT("/Game/GarmentFitLab/Characters/LunaMk2/SKM_LunaMk2.SKM_LunaMk2")));
+                SavedPreview->RefreshInput();
+                TestEqual(TEXT("Supplied character is ready after reopening"), SavedPreview->GetInputState(), EGarmentFitInputState::Ready);
                 TestTrue(TEXT("Saved level references the real WBP"), SavedPreview->InputWidgetClass == Blueprint->GeneratedClass);
-                TestNull(TEXT("No substitute character is saved"), SavedPreview->GetStaticPreview()->GetStaticMesh());
-                TestNull(TEXT("No substitute skeleton is saved"), SavedPreview->GetSkeletalPreview()->GetSkeletalMeshAsset());
+                TestNull(TEXT("No second static character is displayed"), SavedPreview->GetStaticPreview()->GetStaticMesh());
+                TestTrue(TEXT("Skeletal preview uses supplied character"), SavedPreview->GetSkeletalPreview()->GetSkeletalMeshAsset() == Character);
+                TestTrue(TEXT("Supplied character stays in reference pose"), SavedPreview->GetSkeletalPreview()->GetDisablePostProcessBlueprint());
             }
         }
         TestEqual(TEXT("Exactly one preview actor is saved"), PreviewCount, 1);
         TestTrue(TEXT("Level uses isolated game mode"), SavedWorld->GetWorldSettings()->DefaultGameMode == AGarmentFitLabGameMode::StaticClass());
+    }
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGarmentFitSuppliedInputTest, "GarmentFitLab.Input.SuppliedLunaMk2",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FGarmentFitSuppliedInputTest::RunTest(const FString& Parameters)
+{
+    USkeletalMesh* Mesh = LoadObject<USkeletalMesh>(nullptr,
+        TEXT("/Game/GarmentFitLab/Characters/LunaMk2/SKM_LunaMk2.SKM_LunaMk2"));
+    if (!TestNotNull(TEXT("Supplied mesh loads from disk"), Mesh)) return false;
+    USkeleton* Skeleton = Mesh->GetSkeleton();
+    if (TestNotNull(TEXT("New independent skeleton is saved"), Skeleton))
+    {
+        TestTrue(TEXT("Skeleton belongs to this input"), Skeleton->GetPathName().StartsWith(TEXT("/Game/GarmentFitLab/")));
+    }
+    const FReferenceSkeleton& Ref = Mesh->GetRefSkeleton();
+    TestTrue(TEXT("Source skeleton bones are retained"), Ref.GetNum() >= 130);
+    for (const FName Bone : {FName(TEXT("root")), FName(TEXT("pelvis")), FName(TEXT("head")), FName(TEXT("hand_l")), FName(TEXT("ball_l"))})
+    {
+        TestTrue(*FString::Printf(TEXT("Reference bone %s exists"), *Bone.ToString()), Ref.FindBoneIndex(Bone) != INDEX_NONE);
+    }
+    const FSkeletalMeshRenderData* Render = Mesh->GetResourceForRendering();
+    if (!TestTrue(TEXT("Imported LOD has render data"), Render && !Render->LODRenderData.IsEmpty())) return false;
+    const FSkeletalMeshLODRenderData& LOD = Render->LODRenderData[0];
+    FBox SurfaceBounds(ForceInit);
+    for (uint32 Index = 0; Index < LOD.GetNumVertices(); ++Index)
+    {
+        SurfaceBounds += FVector(LOD.StaticVertexBuffers.PositionVertexBuffer.VertexPosition(Index));
+    }
+    const FVector Size = SurfaceBounds.GetSize();
+    AddInfo(FString::Printf(TEXT("Mk2 surface cm: %s; bounds %s; bones %d; sections %d"),
+        *Size.ToString(), *SurfaceBounds.ToString(), Ref.GetNum(), LOD.RenderSections.Num()));
+    // Source is meters, Z-up, front -Y. Import converts to cm, Z-up, front +X.
+    TestTrue(TEXT("Source height is preserved in centimeters"), FMath::IsNearlyEqual(Size.Z, 135.696, 0.2));
+    TestTrue(TEXT("Source width lies on UE Y"), FMath::IsNearlyEqual(Size.Y, 57.315, 0.2));
+    TestTrue(TEXT("Source depth lies on UE X"), FMath::IsNearlyEqual(Size.X, 22.893, 0.2));
+    UMaterial* Matte = LoadObject<UMaterial>(nullptr, TEXT("/Game/GarmentFitLab/Materials/M_LunaMk2_Matte.M_LunaMk2_Matte"));
+    if (TestNotNull(TEXT("New matte material is saved"), Matte))
+    {
+        TArray<UTexture*> Textures;
+        Matte->GetUsedTextures(Textures);
+        TestEqual(TEXT("New body material has no textures"), Textures.Num(), 0);
+        for (const FSkeletalMaterial& Slot : Mesh->GetMaterials())
+        {
+            TestTrue(TEXT("Every body slot uses the requested new material"), Slot.MaterialInterface == Matte);
+        }
     }
     return true;
 }

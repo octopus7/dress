@@ -1,6 +1,41 @@
 # GarmentFitLab 구현 기록
 
-근거: REQ-021~022, [설계](../../Design/GARMENT_FIT_LAB_DESIGN.md), [계획](../../Plans/2026-10-17-garment-fit-lab.md).
+근거: REQ-021~023, [설계](../../Design/GARMENT_FIT_LAB_DESIGN.md), [계획](../../Plans/2026-10-17-garment-fit-lab.md).
+
+## 현재 — 단계 1 구현·검증 완료, 사용자 결과 확인 대기 (2026-10-17)
+
+`/Game/Maps/L_GarmentFitLab`을 열고 Play하면 사용자가 제공한 **SKM_LunaMk2**가 기준 포즈로 표시된다. 입력 메시, 골격, 새 재질은 `/Game/GarmentFitLab/`에만 저장했다. 단계 2는 시작하지 않는다.
+
+### 제공 입력과 재질
+
+- 원본: `D:/github/extraction_shooter/Blender/SKM_LunaMk2.blend`, Blender 4.5.12 LTS. SHA-256 `9DA0A1A696D69CD649CD4E87ACFF2A1EDBCAB497D478ECA49CE9FC68F1AC0640`.
+- `SKM_LunaMk2` 메시와 연결된 `SK_LunaMk2` 골격만 선택하여 내보냈다. 별도 Eye/Head/SideTail/Face 메시는 제외하고 Mk2 내부의 가짜 머리는 유지했다. 원본 blend는 저장하거나 수정하지 않았다.
+- 원본 3,808정점/6,077면 중 표면 사용 정점은 3,115개, 면에 사용되지 않는 정점은 693개다. 연결된 표면은 9개이며 큰 몸 표면은 2,760정점이다. 이 정보는 원본 점검 결과이며 메시를 정리·재모델링한 것이 아니다.
+- **몸과 옷이 완전히 분리된 순수 바디 입력은 아니다.** Mk2 자체에 어깨·상의·장식·신발 형태가 포함되어 있다. 이를 임의로 제거하지 않았다. 향후 체형 분석에서 이 표면을 맨몸 치수로 바로 해석할 수 있는지는 별도 판단이 필요하다.
+- 원본 m 단위를 UE cm로 변환했다. 실제 렌더 표면 크기: **높이 135.696cm, 좌우 폭 57.315cm, 앞뒤 깊이 22.893cm**. 원본 Z-up/앞 -Y → UE Z-up/앞 +X이며 액터 스케일은 1이다. 발 최저점은 Z=-0.376cm이다.
+- 팔을 아래로 벌린 원본 참조 포즈를 표시한다. 원본 130개 뼈와 FBX armature 변환 루트 1개로 UE에는 131개 뼈가 있다. 애니메이션·MorphTarget·PhysicsAsset은 가져오지 않았다.
+- 새 `M_LunaMk2_Matte`: Base Color 선형 RGB `(0.50, 0.58, 0.57)` (대략 sRGB `#BCC8C7`), Metallic `0`, Roughness `0.9`, Specular `0.25`. 모든 메시 재질 슬롯에 적용했다. 원본 텍스처/재질은 가져오지 않았으며 새 재질의 텍스처 사용 수는 0이다.
+- 신규 UE 애셋은 메시·스켈레톤·재질 3개다. 선택 내보낸 FBX는 `Content/GarmentFitLab/Source/SKM_LunaMk2.fbx`에 보존한다. 실제 UI WBP와 런타임 C++는 이번 입력 작업에서 변경하지 않았다.
+
+### 검증 결과
+
+- UE 5.8.3 `LaceLoftEditor Win64 Development` 빌드 성공: `Saved/GarmentFitLab/build-mk2.log`.
+- **GarmentFitLab.Input 3개 + LaceLoft 16개 = 19/19 성공**. JSON `failed=0`, `notRun=0`, 모든 state `Success`. 누락 경로 검사에서 예상 로드 경고 1건. 결과: `Saved/GarmentFitLab/mk2-verified-report/index.json`, `mk2-verified-tests.log`.
+- 실제 디스크 애셋 재로드로 Mk2 참조·표면 크기·독립 골격·새 재질의 모든 슬롯 지정·텍스처 미사용을 검증했다. 새 입력 폴더에 SkeletalMesh 1개, Skeleton 1개, Material 1개만 있으며 Texture 애셋은 없다.
+- 기준 포즈의 root/pelvis/head/hand_l/ball_l 위치를 원본 좌표 변환과 비교해 최대 약 **0.000022cm** 오차를 확인했다. 원본 앞/위 방향과 표시 크기가 일치한다. 결과: `Saved/GarmentFitLab/mk2-reopen.json`.
+- FBX 최초 가져오기에서 bind pose에 모든 deformer가 포함되지 않았다는 경고 1건이 있었다. 참조 포즈의 주요 뼈 위치·렌더 표면 범위·실제 화면은 확인했으나 다른 애니메이션에서의 변형 품질까지 검증한 것은 아니다.
+- UE 에디터 Play에서 실제 WBP의 준비 상태/입력 경로와 캐릭터 표시 확인. 정면·측면·후면 확인. 화면: `Saved/GarmentFitLab/mk2-{play,front,side,back}.png`. 정면을 비추도록 기존 테스트 조명과 시작 시점만 조정했다.
+- 검증 중 발견한 저장 문제를 수정했다. Python 구조체 배열 항목은 수정 후 배열에 재할당하며, 메시 패키지는 `only_if_is_dirty=False`로 명시 저장한다. 화면상 적용만으로 완료 판정하지 않고 저장본 자동화를 통과시켰다.
+- 별도 읽기 전용 검토에서 입력 선택·원본 불변·텍스처 제외·독립 경계를 점검했다. 검토 당시 재질 저장 미확인 지적은 위 저장 수정과 최종 자동화로 해소했다.
+- 변경 범위는 이번 GarmentFitLab 입력/전용 레벨/저작 스크립트/자동화/요청 및 구현 기록이다. 기존 게임/LaceGarment/다른 실험 파일은 수정·커밋하지 않는다.
+
+### 재현
+
+`Plugins/GarmentFitLab/Content/Python/export_luna_mk2.py`를 원본 blend가 로드된 별도 Blender background 프로세스에서 실행하고, `import_luna_mk2.py`를 UE editor Python으로 실행한다. 열린 UE와 별도 commandlet에서 같은 애셋을 동시에 저장하지 않는다. 이후 아래의 자동화 재현 명령을 사용한다. Blender는 이 제공 파일의 일회성 입력 변환 도구이며 플러그인 실행 의존성이 아니다.
+
+---
+
+아래는 실제 입력 제공 전 기반 커밋 `96b1f47` 시점의 기록이다. 당시 미검증 항목은 위의 현재 결과로 갱신되었다.
 
 ## 단계 1 — 검증된 입력 기반, 실제 캐릭터 대기 (2026-10-17)
 

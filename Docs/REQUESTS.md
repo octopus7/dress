@@ -185,3 +185,9 @@ REQ-012의 이번 실행 범위를 조정합니다. 대상은 플러그인 구�
 - 후속 요청에 따라 GarmentFitLab 설계·계획 파일은 구현 완료를 기다리지 않고 즉시 별도 커밋합니다.
 
 생성한 구현 대화: `01a14589-4e9a-7db3-bf58-fd62bdcdecd9` — **GarmentFitLab 단계별 구현**, 로컬 `dress` 프로젝트, `gpt-6-astra` / `high`.
+
+## REQ-023 — GarmentFitLab에 Luna Mk2 메시와 새 무광 재질 적용 (2026-10-17)
+
+- 제공 원본은 `D:/github/extraction_shooter/Blender/SKM_LunaMk2.blend`다. `SKM_LunaMk2` 메시와 필요한 골격만 가져오며, 메시 자체에 포함된 가짜 머리는 유지한다.
+- 별도 눈·머리·얼굴·머리카락 메시와 원본 텍스처는 가져오지 않는다. 청록빛이 살짝 도는 밝은 회색 무광 재질을 새로 만든다.
+- 새 입력은 `Content/GarmentFitLab/`에 저장하고 독립 테스트 레벨에 지정한다. 외부 원본은 수정하지 않으며 단계 1의 실제 입력 검증을 마친다. 단계 2로 자동 진행하지 않는다.
