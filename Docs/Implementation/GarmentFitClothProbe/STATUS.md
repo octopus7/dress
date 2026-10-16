@@ -1,5 +1,83 @@
 # GarmentFitClothProbe 검증 결과
 
+## REQ-026 — 봉제 길이와 바디 핀
+
+2026-10-17. 승인 계획 `32e1779` (`Docs/Plans/2026-10-17-cloth-sewing-body-pins.md`)의 독립 실험 기능을 구현하고 검증했다. Astra/xhigh 구현 에이전트 A/B는 각각 봉제/바디 핀 전용 파일을 담당했고, 조정자가 공통 계약·통합·빌드·UE 실행·검토 반영·커밋을 순차 수행했다. 새 사용자 대화는 만들지 않았다.
+
+### 구현 결과
+
+- **봉제:** 원본 2D 호 길이와 경계 방향을 사용한다. 서로 다른 정점 수/간격은 원본 정점과 인덱스를 유지하면서 경계를 추가 분할한다. `EqualOnly`와 `NormalizedArcLength` 정책을 구분하며 100:150, 150:100 경계도 실제 native XPBD의 2D rest metric으로 시뮬레이션했다. 원본 길이를 암묵적으로 변경하지 않는다.
+- **바디 핀:** 천의 패널 로컬 원본 정점 → 용접된 native 입자 → 바디 삼각형/무게중심 좌표/표면 오프셋을 연결한다. native `MaxDistance=0` 입자가 바디의 강체 이동·회전을 따라간다. 생성·활성/비활성·해제·초기화·직렬화·재열기를 지원한다. 해제/비활성화는 native 질량 재설정을 위해 cloth asset/proxy를 교체하며 위치와 속도의 연속성을 보장하지 않는다.
+- **통합:** 봉제된 경계의 정점을 바디에 고정한 최소 예제를 검증했다. 두 패널의 seam alias가 같은 입자로 해석되며 입력 봉제 애셋의 원본 2D/초기 3D/용접 lookup은 그대로 유지한다.
+- **독립 마네킹:** 안정 커밋 `69583eb`의 FBX blob `8d7916124c01666172a92bbb4b424dfbaa9d0237`를 고정 추출해 실험 안에 정적 바인드 포즈 메시로 임포트했다. 실제 저장 패키지의 hard/soft dependency를 검사해 메인 `/Game/`, `GarmentFitLab`, `LaceGarment` 의존성이 없음을 확인했다.
+
+세부 API와 결과는 [Sewing/IMPLEMENTATION.md](Sewing/IMPLEMENTATION.md), [Sewing/RESULTS.md](Sewing/RESULTS.md), [BodyPins/IMPLEMENTATION.md](BodyPins/IMPLEMENTATION.md), [BodyPins/RESULTS.md](BodyPins/RESULTS.md), [마네킹 출처](BodyPins/SNAPSHOT.md)에 있다.
+
+### 최종 검증
+
+```powershell
+& 'D:\github\dress\Tools\GarmentFitClothProbe\Run-Probe.ps1' -Mode All -Suite All
+```
+
+최종 소스의 전체 근거: `PluginDev/GarmentFitClothProbeHost/Saved/Probe/Runs/20261017-030947-370/`. 표면 진단 추가와 효과 없던 CPU override 제거를 모두 반영한 뒤 전체 과정을 다시 실행했다. 18개 측정 JSON은 앞선 `20261017-030302-984/Reopen` 기록과 파일 해시까지 같았다.
+
+| 검사 | 결과 |
+| --- | --- |
+| UE 5.8.3 독립 Editor 빌드 | 성공, 컴파일 경고/오류 없음 |
+| Create 자동화 | 12/12, 경고 0·실패 0·미실행 0 |
+| 새 프로세스 Reopen 자동화 | 12/12, 경고 0·실패 0·미실행 0 |
+| 회귀/봉제/바디 핀/통합 | 각각 2/7/2/1개 |
+| 원본 애셋 해시 | 27개 전부 재열기 전후 SHA-256 동일 (`SourceAssetHashes.json`) |
+| 생성/재열기 최종 좌표 | 18개 결과 전부 최대 차이 0cm (`CrossProcess.json`) |
+| 저장된 패키지 의존성 | 자체 플러그인과 Engine/Script만 사용 (`Reopen/Integration/package-dependencies.json`) |
+| 코드 검토 | 최초 Important 1·Minor 1 수정 후 읽기 전용 재검토에서 추가 확정 문제 없음 |
+
+중간 표면 진단은 `20261017-030447-655/Build.log`로 빌드했고 `20261017-030509-142/Reopen-Report/index.json`에서 봉제 7개가 경고 없이 통과했다. 애셋 27개 해시도 유지했다. 이 진단은 physics/원본 애셋을 변경하지 않으며 최종 전체 실행에도 포함돼 있다.
+
+| 주요 측정 | 결과 |
+| --- | ---: |
+| 100/100cm 봉제선의 10초 후 길이 | 104.955185cm |
+| 100/150cm 봉제선의 10초 후 길이 | 121.266025cm (각 원본 대비 +21.2660% / −19.1560%) |
+| 150/100cm 봉제선의 10초 후 길이 | 121.680346cm (−18.8798% / +21.6803%) |
+| 같은 3D 배치에서 2D/3D rest metric 대조군의 최종 정점 차이 | 43.470055cm |
+| 봉제 6개 케이스 seam 간격 / hard reset / replay 오차 | 모두 0cm |
+| 바디 핀 3개 최대 추종 오차 | 0.000003632cm |
+| 바디 핀 목표의 월드 이동 | 39.372923cm |
+| 바디 핀 해제 후 이전 핀 정점의 최소 낙하 | 190.393723cm |
+| 통합 seam 핀 1개 최대 추종 오차 | 0.000002849cm |
+| 통합 핀 해제 후 이전 핀 정점 낙하 | 143.498047cm |
+
+바디 핀 해제 시 위치 초기화 점프는 단독 7.761273cm / 통합 43.636227cm다. 이를 숨기거나 매끄러운 해제로 보고하지 않는다. 구 프록시 정점 겹침 표본은 0cm였지만, 이 검사는 실제 접촉 반응의 양성 대조가 아니다. 기존 REQ-024 구 충돌 대조군은 별도 회귀에서 그대로 통과했다.
+
+### 화면과 지원 한계
+
+조정자가 실제 PNG를 열어 비율 봉제의 native 표면과 주름, 독립 마네킹, 활성 핀 표시, 해제 후 native 정점 이동을 확인했다. 바디 핀과 일부 봉제 캡처는 천의 검사선이 주로 보인다. `Equal100-10s-surface.png`는 면을 표시하지 못한 반면 `Ratio100_150-10s-surface.png`는 실제 면을 표시한다. 렌더 proxy/LOD/재질/변형 bounds 존재만으로 표면 표시 성공을 판단하지 않는다.
+
+동기 자동화의 PSO 완료 대기와 proxy 확인을 공통 지원에 넣었지만 이 표시 한계를 해결하지는 못했다. 엔진 내장 CPU skinning 진단(`20261017-030710-380`, 재열기 12/12·해시 27개 유지)도 해결하지 못해 해당 override는 최종 코드에서 제거했다. UI/일반 렌더러 개발로 범위를 확대하지 않았다. 최종 코드는 native component와 native 정점 검사선을 사용하며 대체 천 메시를 만들어 결과를 꾸미지 않는다.
+
+100/150cm 케이스는 10초 뒤에도 마지막 1초 최대 0.435583cm/step 진동이 남는다. 설정한 안정성 문턱은 통과했지만 완전 수렴·범용 이즈/주름 품질을 보장하지 않는다. 강제 핀은 자연스러운 피팅이 아니며 골격 포즈 추종, 전체 마네킹 충돌, 면/자가 관통, substep CCD는 검증 범위 밖이다.
+
+### 실패 검출과 검토 반영
+
+- 최초 RED (`Saved/Probe/REQ026-Red/Report`): 기존 2개 성공, 새 봉제 7개/바디 핀 2개는 의도한 미구현 지점에서 실패했다.
+- 같은 ID 해제→재생성의 authored pin 중복을 `Saved/Probe/REQ026-LifecycleRed/Report`에서 검출한 뒤 수정했다.
+- 저장된 Released/Disabled 문서의 삼각형·오프셋·천 정점·바디 변환 변조를 `Runs/20261017-030029-480/Create-Report`의 네 assertion으로 검출했다. 이후 전체 직렬화 필드, 실제 Reset 결과, native 입자의 목표와 MaxDistance 맵까지 대조해 검토 지적을 해결했다.
+- 최초 FBX 임포트에는 tangent 경고가 있었다. 현재 고정 사본은 BuiltIn tangent로 다시 빌드해 최종 실행이 경고 없이 통과했다. 변경한 신규 임포트 옵션을 애셋 부재 상태에서 재검증한 것은 아니다.
+
+수정·커밋 범위는 기존 세 실험 폴더뿐이다. 메인 프로젝트와 이전 LaceGarment의 코드·애셋·요청 기록, 다른 대화의 변경과 커밋은 보존했다. REQ-026의 두 기능 실험 결과이며 제품 통합·UI·새 의상·배포로 자동 진행하지 않는다.
+
+### 커밋
+
+| 커밋 | 내용 |
+| --- | --- |
+| `0b63f12` | 공통 native 지원과 suite runner (기능 분리 전 중간 기반) |
+| `8cce9ee` | 봉제 API·7개 검사·6개 native 케이스·전용 애셋/문서 |
+| `3dea25b` | 바디 핀 API·저장 lifecycle·마네킹 고정 사본·전용 애셋/문서 |
+
+이 문서를 포함한 `test: verify isolated sewing and body pin integration` 커밋은 통합 자동화·의존성 검사·최종 결과와 재현 문서를 담는다. 기존 회귀 Cloth 두 개와 Physics 애셋 하나는 동일 입력으로 재생성한 원본이며 회귀 수치는 유지됐다. 각 커밋은 공유 index를 확인하고 해당 파일만 `git commit --only`로 저장했다. 위 기능별 커밋과 마지막 통합 커밋의 조합이 REQ-026 결과다.
+
+## REQ-024 — 최초 최소 실험 기록
+
 2026-10-17 (Asia/Seoul). REQ-024의 최소 실험 구현·검증 완료. 기준 계획: `Docs/Plans/2026-10-17-garment-fit-cloth-probe.md`, 시작 기준 커밋 `7c2b869`.
 
 독립 호스트에서 직접 만든 두 패널의 네이티브 Chaos Cloth 봉제 연결, 중력 변형, 구 하나 충돌, hard reset, 재실행, 실제 Cloth 애셋 저장과 새 프로세스 재열기를 확인했다. 제품 통합이나 GarmentFitLab 단계 2 전체 완료를 뜻하지 않는다.

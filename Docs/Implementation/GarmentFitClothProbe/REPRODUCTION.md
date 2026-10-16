@@ -2,6 +2,16 @@
 
 REQ-024 전용 실험이다. 메인 GarmentFitLab의 단계 2나 실제 의상 생성 완료를 의미하지 않는다.
 
+후속 REQ-026 봉제/바디 핀은 같은 독립 호스트에 추가했다. 아래 기존 명령의 기본 suite는 `Regression`으로 유지한다. 후속 기능까지 생성·새 프로세스 재열기·결과 비교를 실행하려면:
+
+```powershell
+& 'D:\github\dress\Tools\GarmentFitClothProbe\Run-Probe.ps1' -Mode All -Suite All
+```
+
+`-Suite Sewing`, `-Suite BodyPins`, `-Suite Integration`으로 각각 7개/2개/1개 자동화를 실행할 수 있다. `All` suite는 기존 회귀 2개를 포함한 정확한 12개 테스트 이름을 확인한다. 통합 suite는 봉제 asset을 별도로 확보한 뒤 바디 핀을 적용한 사본을 실행한다. `Create`/`All`은 선택한 기능의 전용 fixture 애셋을 재생성한다. `Reopen`은 애셋을 읽기만 하며 플러그인 안의 모든 `.uasset` 목록과 SHA-256 보존을 검사한다. 생성/재열기의 모든 `*metrics.json`에서 최종 정점 좌표 차이 ≤0.05cm를 확인하고 `CrossProcess.json`, `SourceAssetHashes.json`에 기록한다.
+
+두 구현의 API·검사 범위·한계는 [Sewing/IMPLEMENTATION.md](Sewing/IMPLEMENTATION.md), [BodyPins/IMPLEMENTATION.md](BodyPins/IMPLEMENTATION.md)를 참고한다. 바디 사본은 [고정 snapshot 기록](BodyPins/SNAPSHOT.md)에 따라 독립 경로에 저장했다. 실제 마네킹 사용 허용은 REQ-026 핀 실험에 한하며 아래 REQ-024 원래 범위를 확대 해석하지 않는다.
+
 ## 실행
 
 UE 5.8.3 설치와 Visual Studio C++ 빌드 도구가 필요하다. PowerShell에서:
