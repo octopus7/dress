@@ -210,6 +210,19 @@ bool ReadBodyCollision(USkeletalMesh* Body,TArray<FCapsule>& Out,TArray<FConvexC
             return Fail(TEXT("Reference body collision requires positive uniform bone scale"));
         Component.Add(T);
     }
+    return ReadBodyCollision(Body,Component,Out,Convexes,Error);
+}
+bool ReadBodyCollision(USkeletalMesh* Body,TConstArrayView<FTransform> Component,TArray<FCapsule>& Out,TArray<FConvexCollider>& Convexes,FString& Error)
+{
+    Error.Reset();
+    auto Fail=[&](const TCHAR* Why){Error=Why;return false;};
+    if(!Body || !Body->GetPhysicsAsset()) return Fail(TEXT("Posed collision requires a saved reference body and Physics Asset"));
+    FAssetCompilingManager::Get().FinishAllCompilation();
+    const auto& Skeleton=Body->GetRefSkeleton();
+    if(Component.Num()!=Skeleton.GetNum() || Component.IsEmpty()) return Fail(TEXT("Component pose must provide every reference bone"));
+    for(const auto& T : Component)
+        if(!T.IsValid() || T.GetScale3D().X<=0 || !T.GetScale3D().Equals(FVector(T.GetScale3D().X),1.e-6))
+            return Fail(TEXT("Posed collision requires finite, positive uniform component transforms"));
     TArray<FCapsule> Result; TArray<FConvexCollider> ConvexResult;
     for(const USkeletalBodySetup* Setup : Body->GetPhysicsAsset()->SkeletalBodySetups)
     {

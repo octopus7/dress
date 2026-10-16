@@ -16,6 +16,19 @@ ULaceGarmentDocument* SamplingFixture(double Width=20)
     return Doc;
 }
 }
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FLGSampleWrap,"LaceGarment.Document.SampleWrappedPlacement",EAutomationTestFlags::EditorContext|EAutomationTestFlags::EngineFilter)
+bool FLGSampleWrap::RunTest(const FString&)
+{
+    auto* D=SamplingFixture(); D->Pieces[0].InitialWrapRadiusCm=2;
+    FSampledDocument S; FString Error;
+    if(!TestTrue(TEXT("Wrapped source samples"),SampleDocument(*D,S,Error))) return false;
+    TestEqual(TEXT("Source placement radius reaches generator"),S.Input.Panels[0].InitialWrapRadiusCm,2.0);
+    TestEqual(TEXT("Original control point remains in millimetres"),D->Pieces[0].Points[1].PositionMm,FVector2D(20,0));
+    D->Pieces[0].InitialWrapRadiusCm=-1;
+    TestFalse(TEXT("Invalid document wrap rejected"),D->ValidateStructure(Error));
+    return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FLGSampleCurves,"LaceGarment.Document.SampleCurvedBoundary",EAutomationTestFlags::EditorContext|EAutomationTestFlags::EngineFilter)
 bool FLGSampleCurves::RunTest(const FString&)
 {

@@ -254,7 +254,7 @@ bool SampleDocument(const ULaceGarmentDocument& D,FSampledDocument& Out,FString&
     for(int32 Panel=0;Panel<D.Pieces.Num();++Panel)
     {
         const auto& Piece=D.Pieces[Panel]; auto& P=Result.Input.Panels[Panel];
-        P.Id=Piece.Id; P.InitialPlacementCm=Piece.InitialPlacementCm; P.MaxEdgeMm=D.MeshMaxEdgeMm;
+        P.Id=Piece.Id; P.InitialPlacementCm=Piece.InitialPlacementCm; P.InitialWrapRadiusCm=Piece.InitialWrapRadiusCm; P.MaxEdgeMm=D.MeshMaxEdgeMm;
         TArray<FLGLoop> Loops={Piece.Outer}; Loops.Append(Piece.Holes);
         for(const auto& Loop : Loops)
         {

@@ -7,6 +7,7 @@
 #include "Engine/Engine.h"
 #include "GameFramework/Actor.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Components/PoseableMeshComponent.h"
 #include "AssetImportTask.h"
 #include "AssetToolsModule.h"
 #include "AssetCompilingManager.h"
@@ -20,8 +21,13 @@
 #include "Factories/FbxSkeletalMeshImportData.h"
 #include "Factories/TextureFactory.h"
 #include "Materials/Material.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "ImageUtils.h"
 #include "Materials/MaterialExpressionTextureSampleParameter2D.h"
 #include "Materials/MaterialExpressionConstant.h"
+#include "Materials/MaterialExpressionVectorParameter.h"
+#include "Materials/MaterialExpressionScalarParameter.h"
+#include "Materials/MaterialExpressionMultiply.h"
 #include "MaterialEditingLibrary.h"
 #include "PhysicsAssetUtils.h"
 #include "PhysicsEngine/PhysicsAsset.h"
@@ -29,9 +35,12 @@
 #include "EditorFramework/AssetImportData.h"
 #include "Rendering/SkeletalMeshModel.h"
 #include "Rendering/SkeletalMeshLODModel.h"
+#include "MeshDescription.h"
+#include "SkeletalMeshAttributes.h"
 #include "Misc/Paths.h"
 #include "Misc/PackageName.h"
 #include "Misc/FileHelper.h"
+#include "Misc/SecureHash.h"
 #include "Serialization/JsonSerializer.h"
 #include "UObject/SavePackage.h"
 #include "HAL/IConsoleManager.h"
@@ -51,6 +60,96 @@ TSharedPtr<FJsonValue> Numbers(std::initializer_list<double> Values)
     TArray<TSharedPtr<FJsonValue>> Array;
     for(double V : Values) Array.Add(MakeShared<FJsonValueNumber>(V));
     return MakeShared<FJsonValueArray>(Array);
+}
+bool RepairTorsoSkin(USkeletalMesh* Mesh,TSharedRef<FJsonObject> Report,FString& Error)
+{
+    if(!Mesh || Mesh->GetPathName()!=TEXT("/LaceGarment/Authoring/Body/SK_OB11.SK_OB11"))
+    { Error=TEXT("Skin repair is restricted to the independent reference body"); return false; }
+    FMeshDescription Description;
+    if(!Mesh->CloneMeshDescription(0,Description) || Description.IsEmpty())
+    { Error=TEXT("Missing editable body mesh description"); return false; }
+    FSkeletalMeshAttributes Attributes(Description);
+    const FName SourceProfile(TEXT("LaceGarmentImportedSkin"));
+    const bool ExistingSource=Attributes.GetSkinWeightProfileNames().Contains(SourceProfile);
+    if(!ExistingSource && !Attributes.RegisterSkinWeightAttribute(SourceProfile))
+    { Error=TEXT("Cannot preserve imported skin profile"); return false; }
+    auto Active=Attributes.GetVertexSkinWeights(),Source=Attributes.GetVertexSkinWeights(SourceProfile);
+    const auto Positions=Attributes.GetVertexPositions(); const auto& Ref=Mesh->GetRefSkeleton();
+    TArray<FTransform> Bones;
+    for(int32 I=0;I<Ref.GetNum();++I)
+    {
+        const int32 Parent=Ref.GetParentIndex(I);
+        Bones.Add(Parent==INDEX_NONE?Ref.GetRefBonePose()[I]:Ref.GetRefBonePose()[I]*Bones[Parent]);
+    }
+    const int32 HipL=Ref.FindBoneIndex(TEXT("thigh_l")),HipR=Ref.FindBoneIndex(TEXT("thigh_r"));
+    const int32 ArmL=Ref.FindBoneIndex(TEXT("upperarm_l")),ArmR=Ref.FindBoneIndex(TEXT("upperarm_r"));
+    if(HipL==INDEX_NONE || HipR==INDEX_NONE || ArmL==INDEX_NONE || ArmR==INDEX_NONE)
+    { Error=TEXT("Reference body joint layout is missing"); return false; }
+    const double HipZ=(Bones[HipL].GetTranslation().Z+Bones[HipR].GetTranslation().Z)*.5;
+    auto Smooth=[](double Low,double High,double X){const double T=FMath::Clamp((X-Low)/(High-Low),0.0,1.0);return T*T*(3-2*T);};
+    int32 Changed=0,WithoutTorso=0;
+    using namespace UE::AnimationCore;
+    FBoneWeightsSettings Settings; Settings.SetNormalizeType(EBoneWeightNormalizeType::Always);
+    for(const FVertexID Vertex : Description.Vertices().GetElementIDs())
+    {
+        if(!ExistingSource)
+        {
+            TArray<FBoneWeight> Original; for(const auto W : Active.Get(Vertex)) Original.Add(W);
+            Source.SetRaw(Vertex,Original);
+        }
+        const FVector3f P=Positions[Vertex];
+        TArray<FBoneWeight> Original; TArray<double> Kept; TArray<bool> Receiver;
+        double Removed=0,RecipientWeight=0;
+        for(const auto W : Source.Get(Vertex))
+        {
+            const FString Name=Ref.GetBoneName(W.GetBoneIndex()).ToString();
+            const bool Leg=Name.StartsWith(TEXT("thigh")) || Name.StartsWith(TEXT("calf")) || Name.StartsWith(TEXT("foot"));
+            const bool Arm=Name.StartsWith(TEXT("upperarm")) || Name.StartsWith(TEXT("forearm")) || Name.StartsWith(TEXT("hand"));
+            double Keep=1;
+            // The measured 15cm reference has a broad imported influence field.
+            // Fade leg influence above the hip and arm influence inside the
+            // lower torso; preserve the joint transition and lateral limbs.
+            if(Leg) Keep=1-Smooth(HipZ+.25,HipZ+.85,P.Z);
+            if(Arm)
+            {
+                const FVector Shoulder=Bones[Name.EndsWith(TEXT("_l"))?ArmL:ArmR].GetTranslation();
+                Keep=FMath::Max(Smooth(FMath::Abs(Shoulder.Y)-.05,FMath::Abs(Shoulder.Y)+.25,FMath::Abs(P.Y)),
+                    Smooth(Shoulder.Z-.5,Shoulder.Z,P.Z));
+            }
+            const bool Torso=Name==TEXT("pelvis") || Name==TEXT("spine_01") || Name==TEXT("chest") || Name==TEXT("neck") || Name.StartsWith(TEXT("clavicle"));
+            Original.Add(W); Kept.Add(W.GetWeight()*Keep); Receiver.Add(Torso);
+            Removed+=W.GetWeight()*(1-Keep); if(Torso) RecipientWeight+=W.GetWeight();
+        }
+        TArray<FBoneWeight> Updated;
+        if(Removed>1.e-8 && RecipientWeight>1.e-8)
+        {
+            for(int32 I=0;I<Original.Num();++I)
+            {
+                const double Weight=Kept[I]+(Receiver[I]?Removed*Original[I].GetWeight()/RecipientWeight:0);
+                if(Weight>0) Updated.Emplace(Original[I].GetBoneIndex(),float(Weight));
+            }
+        }
+        else { Updated=Original; if(Removed>1.e-8) ++WithoutTorso; }
+        const auto Result=FBoneWeights::Create(Updated,Settings);
+        bool Different=Active.Get(Vertex).Num()!=Result.Num();
+        if(!Different) for(int32 I=0;I<Result.Num();++I)
+            Different |= Active.Get(Vertex).Get(I).ToInt32()!=Result[I].ToInt32();
+        if(Different) { Active.Set(Vertex,Result); ++Changed; }
+    }
+    const bool Commit=!ExistingSource || Changed>0;
+    if(Commit)
+    {
+        Mesh->ModifyMeshDescription(0); Mesh->CreateMeshDescription(0,MoveTemp(Description));
+        if(!Mesh->CommitMeshDescription(0)) { Error=TEXT("Cannot commit body skin weights"); return false; }
+        Mesh->PostEditChange(); FAssetCompilingManager::Get().FinishAllCompilation();
+        if(!SaveBodyObject(Mesh)) { Error=TEXT("Cannot save repaired body skin"); return false; }
+    }
+    Report->SetStringField(TEXT("skinRepairVersion"),TEXT("0.3.12-torso-influence"));
+    Report->SetStringField(TEXT("sourceProfile"),SourceProfile.ToString());
+    Report->SetBoolField(TEXT("sourceProfileAdded"),!ExistingSource); Report->SetBoolField(TEXT("saved"),Commit);
+    Report->SetNumberField(TEXT("changedVertices"),Changed); Report->SetNumberField(TEXT("unmodifiedVerticesWithoutTorsoInfluence"),WithoutTorso);
+    Report->SetStringField(TEXT("scope"),TEXT("Explicit reference-body skin authoring; original profile preserved; no new bones/influences, geometry edits or collision refit"));
+    return true;
 }
 bool FitHeadSphere(USkeletalMesh* Mesh,UPhysicsAsset* Physics,FVector& Center,double& Radius)
 {
@@ -97,34 +196,50 @@ bool FitSurfaceCapsules(USkeletalMesh* Mesh,UPhysicsAsset* Physics)
 {
     const auto& Ref=Mesh->GetRefSkeleton(); const auto* Model=Mesh->GetImportedModel();
     if(!Model || Model->LODModels.IsEmpty()) return false;
+    const auto& LOD=Model->LODModels[0]; TArray<FSoftSkinVertex> Imported; LOD.GetVertices(Imported);
+    TArray<int32> Dominant; Dominant.Init(INDEX_NONE,Imported.Num());
+    for(const auto& Section : LOD.Sections) for(int32 I=0;I<Section.SoftVertices.Num();++I)
+    {
+        const auto& Vertex=Section.SoftVertices[I]; int32 Strongest=0;
+        for(int32 K=1;K<MAX_TOTAL_INFLUENCES;++K) if(Vertex.InfluenceWeights[K]>Vertex.InfluenceWeights[Strongest]) Strongest=K;
+        if(!Section.BoneMap.IsValidIndex(Vertex.InfluenceBones[Strongest])) return false;
+        Dominant[Section.BaseVertexIndex+I]=Section.BoneMap[Vertex.InfluenceBones[Strongest]];
+    }
     TArray<FTransform> Bones;
     for(int32 I=0;I<Ref.GetNum();++I)
     {
         const int32 Parent=Ref.GetParentIndex(I);
         Bones.Add(Parent==INDEX_NONE?Ref.GetRefBonePose()[I]:Ref.GetRefBonePose()[I]*Bones[Parent]);
     }
-    for(const FString Name : {TEXT("upperarm_l"),TEXT("upperarm_r"),TEXT("forearm_l"),TEXT("forearm_r"),TEXT("spine_01")})
+    for(const FString Name : {TEXT("upperarm_l"),TEXT("upperarm_r"),TEXT("forearm_l"),TEXT("forearm_r"),TEXT("spine_01"),TEXT("calf_l"),TEXT("calf_r"),TEXT("foot_l"),TEXT("foot_r")})
     {
         const int32 Bone=Ref.FindBoneIndex(FName(Name)); int32 Child=INDEX_NONE;
         for(int32 I=0;I<Ref.GetNum();++I) if(Ref.GetParentIndex(I)==Bone) {Child=I; break;}
-        if(Bone==INDEX_NONE || Child==INDEX_NONE) return false;
-        const FVector PartitionAxis=(Bones[Child].GetTranslation()-Bones[Bone].GetTranslation()).GetSafeNormal();
+        const bool Foot=Name.StartsWith(TEXT("foot")),LowerLeg=Foot || Name.StartsWith(TEXT("calf"));
+        if(Bone==INDEX_NONE || (!Foot && Child==INDEX_NONE)) return false;
+        // Terminal feet point along the imported reference's forward axis.
+        const FVector PartitionAxis=Foot?FVector::ForwardVector:(Bones[Child].GetTranslation()-Bones[Bone].GetTranslation()).GetSafeNormal();
         const bool Torso=Name==TEXT("spine_01");
         // Torso slices follow the spine in height; each capsule follows the
         // wider left/right cross-section instead of enclosing its whole height.
         const FVector Axis=Torso?FVector::RightVector:PartitionAxis;
-        const FVector U=FVector::CrossProduct(Axis,FVector::ForwardVector).GetSafeNormal(),V=FVector::CrossProduct(Axis,U);
+        const FVector Basis=FMath::Abs(FVector::DotProduct(Axis,FVector::ForwardVector))>.99?FVector::UpVector:FVector::ForwardVector;
+        const FVector U=FVector::CrossProduct(Axis,Basis).GetSafeNormal(),V=FVector::CrossProduct(Axis,U);
         if(Axis.IsNearlyZero() || U.IsNearlyZero()) return false;
         TArray<FVector> Points; double MinT=DBL_MAX,MaxT=-DBL_MAX;
-        for(const auto& Section : Model->LODModels[0].Sections) for(const auto& Vertex : Section.SoftVertices)
+        TArray<bool> Included; Included.Init(false,Imported.Num());
+        for(int32 I=0;I<Dominant.Num();++I) Included[I]=Dominant[I]==Bone;
+        // Include complete incident faces at the ankle/knee boundaries. An
+        // enclosing convex capsule then covers each face, not only its corners.
+        if(LowerLeg) for(int32 I=0;I<LOD.IndexBuffer.Num();I+=3)
         {
-            int32 Strongest=0;
-            for(int32 K=1;K<MAX_TOTAL_INFLUENCES;++K) if(Vertex.InfluenceWeights[K]>Vertex.InfluenceWeights[Strongest]) Strongest=K;
-            if(Section.BoneMap.IsValidIndex(Vertex.InfluenceBones[Strongest]) && Section.BoneMap[Vertex.InfluenceBones[Strongest]]==Bone)
-            {
-                const FVector P(Vertex.Position); Points.Add(P); const double T=FVector::DotProduct(P,PartitionAxis);
-                MinT=FMath::Min(MinT,T); MaxT=FMath::Max(MaxT,T);
-            }
+            const int32 A=LOD.IndexBuffer[I],B=LOD.IndexBuffer[I+1],C=LOD.IndexBuffer[I+2];
+            if(Dominant[A]==Bone || Dominant[B]==Bone || Dominant[C]==Bone) Included[A]=Included[B]=Included[C]=true;
+        }
+        for(int32 I=0;I<Imported.Num();++I) if(Included[I])
+        {
+            const FVector P(Imported[I].Position); Points.Add(P); const double T=FVector::DotProduct(P,PartitionAxis);
+            MinT=FMath::Min(MinT,T); MaxT=FMath::Max(MaxT,T);
         }
         if(Points.Num()<4) return false;
         USkeletalBodySetup* Setup=nullptr;
@@ -502,6 +617,226 @@ int32 ULaceGarmentBodyCommandlet::Main(const FString& Params)
     FString ReportDir;
     if(!FParse::Value(*Params,TEXT("ReportDir="),ReportDir)) return 1;
     IFileManager::Get().MakeDirectory(*ReportDir,true);
+    FString InspectionTexture,InspectionPose=TEXT("Reference");
+    const bool bInspectionTexture=FParse::Value(*Params,TEXT("InspectionTexture="),InspectionTexture);
+    const bool bInspectionPose=FParse::Value(*Params,TEXT("InspectionPose="),InspectionPose);
+    if(FParse::Param(*Params,TEXT("RepairSkin")))
+    {
+        if(bInspectionTexture || bInspectionPose) return 13;
+        auto Report=MakeShared<FJsonObject>(); FString Error;
+        auto* Mesh=LoadObject<USkeletalMesh>(nullptr,TEXT("/LaceGarment/Authoring/Body/SK_OB11.SK_OB11"));
+        const bool Repaired=RepairTorsoSkin(Mesh,Report,Error);
+        Report->SetBoolField(TEXT("succeeded"),Repaired); Report->SetStringField(TEXT("error"),Error);
+        FString Json; FJsonSerializer::Serialize(Report,TJsonWriterFactory<>::Create(&Json));
+        return FFileHelper::SaveStringToFile(Json,*(ReportDir/TEXT("skin-repair.json"))) && Repaired?0:13;
+    }
+    if(bInspectionTexture || bInspectionPose)
+    {
+        // Read-only visual QA: do not enter the import, collision authoring or
+        // package-saving path below. Both the texture and material are transient.
+        if(!FParse::Param(*Params,TEXT("Render"))) return 10;
+        auto* Mesh=LoadObject<USkeletalMesh>(nullptr,TEXT("/LaceGarment/Authoring/Body/SK_OB11.SK_OB11"));
+        auto* Material=LoadObject<UMaterial>(nullptr,TEXT("/LaceGarment/Authoring/Body/M_OB11.M_OB11"));
+        const TSet<FString> Poses={TEXT("Reference"),TEXT("ArmsRaised"),TEXT("ArmsForward"),TEXT("Elbows90"),TEXT("Knees90"),TEXT("Sitting"),TEXT("HeadTurn")};
+        if(!Mesh || !Material || !Poses.Contains(InspectionPose)) return 11;
+        auto* Texture=bInspectionTexture?FImageUtils::ImportFileAsTexture2D(InspectionTexture):nullptr;
+        if(bInspectionTexture && !Texture) return 11;
+        if(Texture) { Texture->SRGB=true; Texture->Filter=TF_Bilinear; Texture->AddressX=TA_Clamp; Texture->AddressY=TA_Clamp; Texture->UpdateResource(); }
+        FAssetCompilingManager::Get().FinishAllCompilation();
+        const auto& Skeleton=Mesh->GetRefSkeleton();
+        for(const FName Bone : {FName(TEXT("upperarm_l")),FName(TEXT("upperarm_r")),FName(TEXT("forearm_l")),FName(TEXT("forearm_r")),FName(TEXT("hand_l")),FName(TEXT("hand_r")),FName(TEXT("thigh_l")),FName(TEXT("thigh_r")),FName(TEXT("calf_l")),FName(TEXT("calf_r")),FName(TEXT("foot_l")),FName(TEXT("foot_r")),FName(TEXT("head"))})
+            if(Skeleton.FindBoneIndex(Bone)==INDEX_NONE) return 11;
+        const UWorld::InitializationValues Init=UWorld::InitializationValues().AllowAudioPlayback(false).CreatePhysicsScene(false).RequiresHitProxies(false).CreateNavigation(false).CreateAISystem(false);
+        auto* World=UWorld::CreateWorld(EWorldType::Game,false,TEXT("LaceGarmentBodyInspection"),nullptr,true,ERHIFeatureLevel::Num,&Init);
+        auto& Context=GEngine->CreateNewWorldContext(EWorldType::Game); Context.SetCurrentWorld(World);
+        auto* Actor=World->SpawnActor<AActor>();
+        auto* Component=NewObject<UPoseableMeshComponent>(Actor); Actor->SetRootComponent(Component); Actor->AddInstanceComponent(Component);
+        Component->SetSkinnedAssetAndUpdate(Mesh); Component->RegisterComponent();
+        TArray<FTransform> Reference,Posed,Local=Skeleton.GetRefBonePose();
+        for(int32 I=0;I<Local.Num();++I)
+        {
+            const int32 Parent=Skeleton.GetParentIndex(I);
+            Reference.Add(Parent==INDEX_NONE?Local[I]:Local[I]*Reference[Parent]);
+        }
+        for(int32 I=0;I<Local.Num();++I)
+        {
+            const int32 Parent=Skeleton.GetParentIndex(I);
+            auto Pose=Parent==INDEX_NONE?Local[I]:Local[I]*Posed[Parent];
+            const FString Name=Skeleton.GetBoneName(I).ToString();
+            FQuat Rotation=FQuat::Identity;
+            if(Name.StartsWith(TEXT("upperarm_")) && (InspectionPose==TEXT("ArmsRaised") || InspectionPose==TEXT("ArmsForward")))
+            {
+                const int32 Child=Skeleton.FindBoneIndex(FName(*Name.Replace(TEXT("upperarm_"),TEXT("forearm_"))));
+                const FVector Direction=Pose.TransformVectorNoScale(Skeleton.GetRefBonePose()[Child].GetTranslation()).GetSafeNormal();
+                // Raise laterally to horizontal; overhead arms would intersect
+                // this doll's deliberately oversized head.
+                const FVector Target=InspectionPose==TEXT("ArmsRaised")?FVector(0,Direction.Y<0?-1:1,0):FVector::XAxisVector;
+                Rotation=FQuat::FindBetweenNormals(Direction,Target);
+            }
+            else if(Name.StartsWith(TEXT("forearm_")) && InspectionPose==TEXT("Elbows90"))
+            {
+                const int32 Child=Skeleton.FindBoneIndex(FName(*Name.Replace(TEXT("forearm_"),TEXT("hand_"))));
+                const FVector Direction=Pose.TransformVectorNoScale(Skeleton.GetRefBonePose()[Child].GetTranslation()).GetSafeNormal();
+                const FVector Upper=(Pose.GetTranslation()-Posed[Parent].GetTranslation()).GetSafeNormal();
+                const FVector Target=(FVector::XAxisVector-Upper*FVector::DotProduct(Upper,FVector::XAxisVector)).GetSafeNormal();
+                Rotation=FQuat::FindBetweenNormals(Direction,Target);
+            }
+            else if(Name.StartsWith(TEXT("thigh_")) && InspectionPose==TEXT("Sitting"))
+            {
+                const int32 Child=Skeleton.FindBoneIndex(FName(*Name.Replace(TEXT("thigh_"),TEXT("calf_"))));
+                const FVector Direction=Pose.TransformVectorNoScale(Skeleton.GetRefBonePose()[Child].GetTranslation()).GetSafeNormal();
+                Rotation=FQuat::FindBetweenNormals(Direction,FVector::XAxisVector);
+            }
+            else if(Name.StartsWith(TEXT("calf_")) && (InspectionPose==TEXT("Knees90") || InspectionPose==TEXT("Sitting")))
+            {
+                const int32 Child=Skeleton.FindBoneIndex(FName(*Name.Replace(TEXT("calf_"),TEXT("foot_"))));
+                const FVector Direction=Pose.TransformVectorNoScale(Skeleton.GetRefBonePose()[Child].GetTranslation()).GetSafeNormal();
+                const FVector Upper=(Pose.GetTranslation()-Posed[Parent].GetTranslation()).GetSafeNormal();
+                const FVector Desired=InspectionPose==TEXT("Sitting")?-FVector::ZAxisVector:-FVector::XAxisVector;
+                const FVector Target=(Desired-Upper*FVector::DotProduct(Upper,Desired)).GetSafeNormal();
+                Rotation=FQuat::FindBetweenNormals(Direction,Target);
+            }
+            else if(Name==TEXT("head") && InspectionPose==TEXT("HeadTurn")) Rotation=FQuat(FVector::ZAxisVector,PI/4);
+            Pose.SetRotation(Rotation*Pose.GetRotation()); Posed.Add(Pose);
+            Local[I]=Parent==INDEX_NONE?Pose:Pose.GetRelativeTransform(Posed[Parent]);
+        }
+        Component->BoneSpaceTransforms=MoveTemp(Local);
+        Component->MarkRefreshTransformDirty(); Component->RefreshBoneTransforms();
+        Posed=Component->GetComponentSpaceTransforms();
+        auto* Instance=UMaterialInstanceDynamic::Create(Material,Component);
+        if(Texture) Instance->SetTextureParameterValue(TEXT("BaseColorTexture"),Texture);
+        for(int32 I=0;I<Component->GetNumMaterials();++I) Component->SetMaterial(I,Instance);
+        const bool Rendered=LaceGarment::CaptureInspectionViews(World,ReportDir,FVector(0,0,7.5),18,{FVector(30,0,7.5),FVector(0,30,7.5),FVector(-30,0,7.5)});
+        auto Report=MakeShared<FJsonObject>();
+        Report->SetStringField(TEXT("scope"),TEXT("Read-only body pose/UV visual inspection; rendered does not assert pose, skin or collision acceptance; explicit texture resolution, no automatic mip-chain validation"));
+        Report->SetStringField(TEXT("mesh"),Mesh->GetPathName()); Report->SetStringField(TEXT("inspectionTexture"),InspectionTexture);
+        Report->SetStringField(TEXT("inspectionPose"),InspectionPose);
+        if(Texture) { Report->SetNumberField(TEXT("textureWidth"),Texture->GetSizeX()); Report->SetNumberField(TEXT("textureHeight"),Texture->GetSizeY()); }
+        TArray<TSharedPtr<FJsonValue>> BoneReport;
+        for(int32 I=0;I<Posed.Num();++I)
+        {
+            auto Item=MakeShared<FJsonObject>(); Item->SetStringField(TEXT("name"),Skeleton.GetBoneName(I).ToString());
+            Item->SetNumberField(TEXT("parent"),Skeleton.GetParentIndex(I));
+            const auto P=Posed[I].GetTranslation(),R=Reference[I].GetTranslation();
+            const auto Q=Posed[I].GetRotation(),RQ=Reference[I].GetRotation();
+            Item->SetField(TEXT("referenceOriginCm"),Numbers({R.X,R.Y,R.Z})); Item->SetField(TEXT("posedOriginCm"),Numbers({P.X,P.Y,P.Z}));
+            Item->SetField(TEXT("referenceRotation"),Numbers({RQ.X,RQ.Y,RQ.Z,RQ.W})); Item->SetField(TEXT("posedRotation"),Numbers({Q.X,Q.Y,Q.Z,Q.W}));
+            BoneReport.Add(MakeShared<FJsonValueObject>(Item));
+        }
+        Report->SetArrayField(TEXT("bones"),BoneReport);
+        // Evaluate the imported full influence sets against the actual component
+        // pose for independent joint-area checks after rendering.
+        const auto* Model=Mesh->GetImportedModel();
+        bool PoseDataValid=Model && !Model->LODModels.IsEmpty() && Posed.Num()==Reference.Num();
+        TArray<TSharedPtr<FJsonValue>> SkinPositions;
+        if(PoseDataValid)
+        {
+            const auto& LOD=Model->LODModels[0];
+            TArray<FSoftSkinVertex> ReferenceVertices; LOD.GetVertices(ReferenceVertices);
+            FSHA1 GeometryHash;
+            for(const auto& Vertex : ReferenceVertices)
+            {
+                const float Values[]={Vertex.Position.X,Vertex.Position.Y,Vertex.Position.Z,Vertex.UVs[0].X,Vertex.UVs[0].Y};
+                GeometryHash.Update(reinterpret_cast<const uint8*>(Values),sizeof(Values));
+            }
+            for(uint32 Index : LOD.IndexBuffer) GeometryHash.Update(reinterpret_cast<const uint8*>(&Index),sizeof(Index));
+            GeometryHash.Final(); uint8 Digest[20]; GeometryHash.GetHash(Digest);
+            Report->SetStringField(TEXT("referenceGeometrySha1"),BytesToHex(Digest,20).ToLower());
+            Report->SetStringField(TEXT("referenceGeometryHashScope"),TEXT("Imported vertex XYZ/UV0 float32 little-endian followed by triangle indices uint32 little-endian"));
+            TArray<FVector3d> Points; Points.SetNumZeroed(LOD.NumVertices);
+            for(const auto& Section : LOD.Sections) for(int32 V=0;V<Section.SoftVertices.Num();++V)
+            {
+                const auto& Vertex=Section.SoftVertices[V];
+                FVector3d Position=FVector3d::ZeroVector;
+                for(int32 K=0;K<MAX_TOTAL_INFLUENCES;++K) if(Vertex.InfluenceWeights[K])
+                {
+                    if(!Section.BoneMap.IsValidIndex(Vertex.InfluenceBones[K])) { PoseDataValid=false; continue; }
+                    const int32 Bone=Section.BoneMap[Vertex.InfluenceBones[K]];
+                    if(!Posed.IsValidIndex(Bone)) { PoseDataValid=false; continue; }
+                    Position+=Posed[Bone].TransformPosition(Reference[Bone].InverseTransformPosition(FVector3d(Vertex.Position)))*(double(Vertex.InfluenceWeights[K])/65535);
+                }
+                const int32 Index=Section.BaseVertexIndex+V;
+                if(Position.ContainsNaN() || !Points.IsValidIndex(Index)) PoseDataValid=false;
+                else Points[Index]=Position;
+            }
+            for(const auto& P : Points) SkinPositions.Add(Numbers({P.X,P.Y,P.Z}));
+            TArray<LaceGarment::FCapsule> Capsules; TArray<LaceGarment::FConvexCollider> Convexes; FString CollisionError;
+            const bool CollisionValid=LaceGarment::ReadBodyCollision(Mesh,Posed,Capsules,Convexes,CollisionError);
+            Report->SetBoolField(TEXT("posedCollisionRead"),CollisionValid);
+            Report->SetStringField(TEXT("posedCollisionError"),CollisionError);
+            if(CollisionValid)
+            {
+                int32 SampleCount=0,Uncovered=0; double MaxGap=0; FVector3d WorstGapPosition=FVector3d::ZeroVector;
+                TArray<TSharedPtr<FJsonValue>> Examples;
+                auto CheckSurface=[&](const FVector3d& P)
+                {
+                    ++SampleCount; double Phi=DBL_MAX;
+                    for(const auto& C : Capsules)
+                    {
+                        const auto Axis=C.B-C.A;
+                        const auto Q=C.A+Axis*FMath::Clamp(FVector3d::DotProduct(P-C.A,Axis)/FMath::Max(Axis.SquaredLength(),1.e-12),0.0,1.0);
+                        Phi=FMath::Min(Phi,(P-Q).Length()-C.RadiusCm);
+                        if(Phi<=.005) return;
+                    }
+                    for(const auto& C : Convexes)
+                    {
+                        FVector3d Normal; Phi=FMath::Min(Phi,C.SignedDistance(P,Normal));
+                        if(Phi<=.005) return;
+                    }
+                    ++Uncovered; if(Phi>MaxGap) { MaxGap=Phi; WorstGapPosition=P; }
+                    if(Examples.Num()<16) Examples.Add(Numbers({P.X,P.Y,P.Z}));
+                };
+                for(const auto& P : Points) CheckSurface(P);
+                for(int32 T=0;T+2<LOD.IndexBuffer.Num();T+=3)
+                {
+                    const int32 A=LOD.IndexBuffer[T],B=LOD.IndexBuffer[T+1],C=LOD.IndexBuffer[T+2];
+                    if(!Points.IsValidIndex(A) || !Points.IsValidIndex(B) || !Points.IsValidIndex(C)) { PoseDataValid=false; continue; }
+                    CheckSurface((Points[A]+Points[B]+Points[C])/3);
+                    CheckSurface((Points[A]+Points[B])/2); CheckSurface((Points[B]+Points[C])/2); CheckSurface((Points[C]+Points[A])/2);
+                }
+                Report->SetNumberField(TEXT("bodyCollisionSamples"),SampleCount);
+                Report->SetNumberField(TEXT("uncoveredBodySamples"),Uncovered);
+                Report->SetNumberField(TEXT("maxUncoveredBodyGapCm"),MaxGap);
+                Report->SetField(TEXT("worstUncoveredBodyPositionCm"),Numbers({WorstGapPosition.X,WorstGapPosition.Y,WorstGapPosition.Z}));
+                TArray<TSharedPtr<FJsonValue>> Nearby;
+                if(Uncovered>0)
+                {
+                    TArray<int32> Indices; for(int32 I=0;I<Points.Num();++I) Indices.Add(I);
+                    Indices.Sort([&](int32 A,int32 B){return (Points[A]-WorstGapPosition).SquaredLength()<(Points[B]-WorstGapPosition).SquaredLength();});
+                    for(int32 N=0;N<FMath::Min(3,Indices.Num());++N)
+                    {
+                        const int32 Index=Indices[N];
+                        for(const auto& Section : LOD.Sections) if(Index>=int32(Section.BaseVertexIndex) && Index<int32(Section.BaseVertexIndex)+Section.SoftVertices.Num())
+                        {
+                            const auto& Vertex=Section.SoftVertices[Index-Section.BaseVertexIndex];
+                            auto Item=MakeShared<FJsonObject>(); Item->SetNumberField(TEXT("index"),Index);
+                            const auto R=Vertex.Position,P=FVector3f(Points[Index]);
+                            Item->SetField(TEXT("referenceCm"),Numbers({R.X,R.Y,R.Z})); Item->SetField(TEXT("posedCm"),Numbers({P.X,P.Y,P.Z}));
+                            TArray<TSharedPtr<FJsonValue>> Influences;
+                            for(int32 K=0;K<MAX_TOTAL_INFLUENCES;++K) if(Vertex.InfluenceWeights[K] && Section.BoneMap.IsValidIndex(Vertex.InfluenceBones[K]))
+                            {
+                                auto Influence=MakeShared<FJsonObject>();
+                                Influence->SetStringField(TEXT("bone"),Skeleton.GetBoneName(Section.BoneMap[Vertex.InfluenceBones[K]]).ToString());
+                                Influence->SetNumberField(TEXT("weight"),double(Vertex.InfluenceWeights[K])/65535);
+                                Influences.Add(MakeShared<FJsonValueObject>(Influence));
+                            }
+                            Item->SetArrayField(TEXT("skinInfluences"),Influences); Nearby.Add(MakeShared<FJsonValueObject>(Item)); break;
+                        }
+                    }
+                }
+                Report->SetArrayField(TEXT("worstUncoveredBodyNearbyVertices"),Nearby);
+                Report->SetArrayField(TEXT("uncoveredBodyExamplePositionsCm"),Examples);
+                Report->SetStringField(TEXT("bodyCollisionCoverageScope"),TEXT("Vertices, triangle centroids and edge midpoints within 0.005cm; not a continuous whole-face or self-intersection proof"));
+            }
+            else PoseDataValid=false;
+        }
+        Report->SetArrayField(TEXT("skinnedPositionsCm"),SkinPositions);
+        Report->SetBoolField(TEXT("poseDataValid"),PoseDataValid);
+        Report->SetBoolField(TEXT("rendered"),Rendered); Report->SetBoolField(TEXT("assetsSaved"),false);
+        World->DestroyWorld(false); GEngine->DestroyWorldContext(World);
+        FString Json; FJsonSerializer::Serialize(Report,TJsonWriterFactory<>::Create(&Json));
+        return FFileHelper::SaveStringToFile(Json,*(ReportDir/TEXT("inspection.json"))) && Rendered && PoseDataValid?0:12;
+    }
     const auto Plugin=IPluginManager::Get().FindPlugin(TEXT("LaceGarment"));
     if(!Plugin) return 2;
     const FString Source=FPaths::ConvertRelativePathToFull(Plugin->GetBaseDir()/TEXT("Resources/ReferenceBody"));
@@ -555,6 +890,35 @@ int32 ULaceGarmentBodyCommandlet::Main(const FString& Params)
         Roughness->R=0.65f; UMaterialEditingLibrary::ConnectMaterialProperty(Roughness,TEXT(""),MP_Roughness);
         Material->SetMaterialUsage(MATUSAGE_SkeletalMesh); UMaterialEditingLibrary::RecompileMaterial(Material);
     }
+    // Upgrade the generated body's paint controls without removing source nodes
+    // or replacing the user's texture. The default appearance remains white.
+    UMaterialExpressionTextureSampleParameter2D* PaintSample=nullptr;
+    UMaterialExpressionVectorParameter* Tint=nullptr;
+    UMaterialExpressionScalarParameter* Roughness=nullptr;
+    for(UMaterialExpression* Expression : Material->GetExpressions())
+    {
+        if(auto* P=Cast<UMaterialExpressionTextureSampleParameter2D>(Expression); P && P->ParameterName==TEXT("BaseColorTexture")) PaintSample=P;
+        if(auto* P=Cast<UMaterialExpressionVectorParameter>(Expression); P && P->ParameterName==TEXT("Tint")) Tint=P;
+        if(auto* P=Cast<UMaterialExpressionScalarParameter>(Expression); P && P->ParameterName==TEXT("Roughness")) Roughness=P;
+    }
+    if(!PaintSample) { UE_LOG(LogTemp,Error,TEXT("Generated body material is missing BaseColorTexture")); return 5; }
+    bool MaterialChanged=false;
+    if(!Tint)
+    {
+        Tint=CastChecked<UMaterialExpressionVectorParameter>(UMaterialEditingLibrary::CreateMaterialExpression(Material,UMaterialExpressionVectorParameter::StaticClass()));
+        Tint->ParameterName=TEXT("Tint"); Tint->DefaultValue=FLinearColor::White;
+        auto* Multiply=CastChecked<UMaterialExpressionMultiply>(UMaterialEditingLibrary::CreateMaterialExpression(Material,UMaterialExpressionMultiply::StaticClass()));
+        UMaterialEditingLibrary::ConnectMaterialExpressions(PaintSample,TEXT("RGB"),Multiply,TEXT("A"));
+        UMaterialEditingLibrary::ConnectMaterialExpressions(Tint,TEXT("RGB"),Multiply,TEXT("B"));
+        UMaterialEditingLibrary::ConnectMaterialProperty(Multiply,TEXT(""),MP_BaseColor); MaterialChanged=true;
+    }
+    if(!Roughness)
+    {
+        Roughness=CastChecked<UMaterialExpressionScalarParameter>(UMaterialEditingLibrary::CreateMaterialExpression(Material,UMaterialExpressionScalarParameter::StaticClass()));
+        Roughness->ParameterName=TEXT("Roughness"); Roughness->DefaultValue=.65f;
+        UMaterialEditingLibrary::ConnectMaterialProperty(Roughness,TEXT(""),MP_Roughness); MaterialChanged=true;
+    }
+    if(MaterialChanged) UMaterialEditingLibrary::RecompileMaterial(Material);
     for(auto& Slot : Mesh->GetMaterials()) Slot.MaterialInterface=Material;
     UPackage* PhysicsPackage=CreatePackage(*(Folder/TEXT("PA_OB11"))); PhysicsPackage->FullyLoad();
     UPhysicsAsset* Physics=FindObject<UPhysicsAsset>(PhysicsPackage,TEXT("PA_OB11"));
@@ -587,7 +951,7 @@ int32 ULaceGarmentBodyCommandlet::Main(const FString& Params)
     Report->SetNumberField(TEXT("physicsBodies"),Physics->SkeletalBodySetups.Num());
     int32 ShapeCount=0; for(const USkeletalBodySetup* Setup : Physics->SkeletalBodySetups) if(Setup) ShapeCount+=Setup->AggGeom.GetElementCount();
     Report->SetNumberField(TEXT("physicsShapes"),ShapeCount);
-    Report->SetStringField(TEXT("collisionFitVersion"),TEXT("0.3.10-thigh-taper"));
+    Report->SetStringField(TEXT("collisionFitVersion"),TEXT("0.3.11-lower-leg-surface"));
     TArray<TSharedPtr<FJsonValue>> CapsuleReport,ConvexReport;
     for(const auto& C : AuditCapsules)
     {

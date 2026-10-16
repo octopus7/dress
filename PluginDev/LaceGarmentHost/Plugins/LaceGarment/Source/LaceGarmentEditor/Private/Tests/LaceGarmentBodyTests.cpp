@@ -11,6 +11,47 @@
 #include "LaceGarmentPipeline.h"
 #include "LaceGarmentCollisionProjection.h"
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FLGPosedCollision, "LaceGarment.Body.PosedCollisionSpace", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FLGPosedCollision::RunTest(const FString&)
+{
+    auto* Body=LoadObject<USkeletalMesh>(nullptr,TEXT("/LaceGarment/Authoring/Body/SK_OB11.SK_OB11"));
+    if(!TestNotNull(TEXT("Saved body"),Body)) return false;
+    using namespace LaceGarment;
+    FString Error; TArray<FCapsule> Reference,Posed; TArray<FConvexCollider> ReferenceConvex,PosedConvex;
+    if(!TestTrue(TEXT("Read reference collision"),ReadBodyCollision(Body,Reference,ReferenceConvex,Error))) return false;
+    const auto& Skeleton=Body->GetRefSkeleton(); TArray<FTransform> Component;
+    for(int32 I=0;I<Skeleton.GetNum();++I)
+    {
+        const int32 Parent=Skeleton.GetParentIndex(I);
+        Component.Add(Parent==INDEX_NONE?Skeleton.GetRefBonePose()[I]:Skeleton.GetRefBonePose()[I]*Component[Parent]);
+    }
+    const FTransform Motion(FRotator(13,27,-9),FVector(2,-3,1));
+    for(auto& T : Component) T=T*Motion;
+    if(!TestTrue(TEXT("Read moved collision"),ReadBodyCollision(Body,Component,Posed,PosedConvex,Error))) return false;
+    TestEqual(TEXT("Capsule count preserved"),Posed.Num(),Reference.Num());
+    TestEqual(TEXT("Convex count preserved"),PosedConvex.Num(),ReferenceConvex.Num());
+    for(int32 I=0;I<FMath::Min(Posed.Num(),Reference.Num());++I)
+    {
+        TestTrue(TEXT("Capsule endpoints follow the supplied bone pose"),Posed[I].A.Equals(Motion.TransformPosition(Reference[I].A),1.e-5)
+            && Posed[I].B.Equals(Motion.TransformPosition(Reference[I].B),1.e-5));
+        TestEqual(TEXT("Rigid motion retains radius"),Posed[I].RadiusCm,Reference[I].RadiusCm);
+    }
+    for(int32 I=0;I<FMath::Min(PosedConvex.Num(),ReferenceConvex.Num());++I)
+    {
+        const auto A=ReferenceConvex[I].GetVertices(),B=PosedConvex[I].GetVertices();
+        TestEqual(TEXT("Cooked vertices preserved"),A.Num(),B.Num());
+        for(int32 V=0;V<FMath::Min(A.Num(),B.Num());++V)
+            if(!B[V].Equals(Motion.TransformPosition(A[V]),1.e-5)) { AddError(TEXT("Cooked convex vertex did not follow supplied bone pose")); break; }
+    }
+    const auto Before=Posed[0].A;
+    Component[0].SetScale3D(FVector(-1,1,1));
+    TestFalse(TEXT("Mirrored pose rejected"),ReadBodyCollision(Body,Component,Posed,PosedConvex,Error));
+    TestEqual(TEXT("Failed read preserves collision"),Posed[0].A,Before);
+    Component.Pop();
+    TestFalse(TEXT("Incomplete pose rejected"),ReadBodyCollision(Body,Component,Posed,PosedConvex,Error));
+    return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FLGReferenceBody, "LaceGarment.Body.IndependentReference", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 bool FLGReferenceBody::RunTest(const FString&)
 {
@@ -25,7 +66,16 @@ bool FLGReferenceBody::RunTest(const FString&)
     if(Mesh->GetPhysicsAsset()) TestTrue(TEXT("Physics belongs to plugin"),Mesh->GetPhysicsAsset()->GetPathName().StartsWith(TEXT("/LaceGarment/")));
     TestTrue(TEXT("Body has material"),!Mesh->GetMaterials().IsEmpty());
     for(const auto& Material : Mesh->GetMaterials())
+    {
         TestTrue(TEXT("Material belongs to plugin"),Material.MaterialInterface && Material.MaterialInterface->GetPathName().StartsWith(TEXT("/LaceGarment/")));
+        if(Material.MaterialInterface)
+        {
+            FLinearColor Tint; float Roughness=0; UTexture* Texture=nullptr;
+            TestTrue(TEXT("Saved body exposes a white Tint control"),Material.MaterialInterface->GetVectorParameterValue(FHashedMaterialParameterInfo(TEXT("Tint")),Tint) && Tint.Equals(FLinearColor::White));
+            TestTrue(TEXT("Saved body exposes its Roughness control"),Material.MaterialInterface->GetScalarParameterValue(FHashedMaterialParameterInfo(TEXT("Roughness")),Roughness) && FMath::IsNearlyEqual(Roughness,.65f));
+            TestTrue(TEXT("Saved body exposes its paint texture"),Material.MaterialInterface->GetTextureParameterValue(FHashedMaterialParameterInfo(TEXT("BaseColorTexture")),Texture) && Texture);
+        }
+    }
     if(const auto* Import=Mesh->GetAssetImportData())
         for(const auto& Source : Import->GetSourceData().SourceFiles)
             TestTrue(TEXT("No author machine absolute import path"),FPaths::IsRelative(Source.RelativeFilename));
@@ -265,7 +315,7 @@ bool FLGBodySurfaceCoverage::RunTest(const FString&)
         const auto& V=Section.SoftVertices[I];int32 Strongest=0;
         for(int32 K=1;K<MAX_TOTAL_INFLUENCES;++K) if(V.InfluenceWeights[K]>V.InfluenceWeights[Strongest]) Strongest=K;
         const FString Name=Mesh->GetRefSkeleton().GetBoneName(Section.BoneMap[V.InfluenceBones[Strongest]]).ToString();
-        Relevant[Section.BaseVertexIndex+I]=Name==TEXT("pelvis") || Name==TEXT("spine_01") || Name==TEXT("chest") || Name==TEXT("neck") || Name.StartsWith(TEXT("clavicle")) || Name.StartsWith(TEXT("upperarm")) || Name.StartsWith(TEXT("forearm")) || Name.StartsWith(TEXT("thigh"));
+        Relevant[Section.BaseVertexIndex+I]=Name==TEXT("pelvis") || Name==TEXT("spine_01") || Name==TEXT("chest") || Name==TEXT("neck") || Name.StartsWith(TEXT("clavicle")) || Name.StartsWith(TEXT("upperarm")) || Name.StartsWith(TEXT("forearm")) || Name.StartsWith(TEXT("thigh")) || Name.StartsWith(TEXT("calf")) || Name.StartsWith(TEXT("foot"));
     }
     for(int32 I=0;I<Vertices.Num();++I)
     {
@@ -286,9 +336,37 @@ bool FLGBodySurfaceCoverage::RunTest(const FString&)
         if(!Relevant[A] || !Relevant[B] || !Relevant[C]) continue;
         ++Faces;if((Inside[A]&Inside[B]&Inside[C])==0) ++Unproven;
     }
-    TestTrue(TEXT("Actual garment-contact body faces tested"),Faces>25000);
+    TestTrue(TEXT("Body faces including lower legs and feet tested"),Faces>35000);
     // Convexity makes three contained vertices a proof for the whole triangle.
     // Merely containing each vertex in a different collider is insufficient.
     TestEqual(TEXT("Every contact face is wholly contained in one collision shape"),Unproven,0);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FLGBodyTorsoSkinIsolation,"LaceGarment.Body.TorsoSkinIsolation",EAutomationTestFlags::EditorContext|EAutomationTestFlags::EngineFilter)
+bool FLGBodyTorsoSkinIsolation::RunTest(const FString&)
+{
+    auto* Mesh=LoadObject<USkeletalMesh>(nullptr,TEXT("/LaceGarment/Authoring/Body/SK_OB11.SK_OB11"));
+    if(!TestNotNull(TEXT("Independent body"),Mesh)) return false;
+    const auto* Model=Mesh->GetImportedModel();
+    if(!TestTrue(TEXT("Imported skin data"),Model && !Model->LODModels.IsEmpty())) return false;
+    int32 Samples=0,Contaminated=0;
+    // Measured torso flank, medial to the real armpit and well above the hip.
+    // This surface must not be pulled by an arm or thigh when those joints move.
+    for(const auto& Section : Model->LODModels[0].Sections) for(const auto& Vertex : Section.SoftVertices)
+    {
+        const FVector3f P=Vertex.Position;
+        if(FMath::Abs(P.X)>.12 || FMath::Abs(P.Y)<1.2 || FMath::Abs(P.Y)>1.35 || P.Z<7.2 || P.Z>8.1) continue;
+        ++Samples; bool Wrong=false;
+        for(int32 K=0;K<MAX_TOTAL_INFLUENCES;++K) if(Vertex.InfluenceWeights[K])
+        {
+            const FString Name=Mesh->GetRefSkeleton().GetBoneName(Section.BoneMap[Vertex.InfluenceBones[K]]).ToString();
+            Wrong |= Name.StartsWith(TEXT("thigh")) || Name.StartsWith(TEXT("calf")) || Name.StartsWith(TEXT("foot"))
+                || Name.StartsWith(TEXT("upperarm")) || Name.StartsWith(TEXT("forearm")) || Name.StartsWith(TEXT("hand"));
+        }
+        if(Wrong) ++Contaminated;
+    }
+    TestTrue(TEXT("Both torso flanks sampled"),Samples>50);
+    TestEqual(TEXT("Torso flank contains no limb skin influences"),Contaminated,0);
     return true;
 }

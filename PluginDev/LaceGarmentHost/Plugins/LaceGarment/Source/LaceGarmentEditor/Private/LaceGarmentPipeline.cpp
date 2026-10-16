@@ -1,10 +1,13 @@
 #include "LaceGarmentPipeline.h"
 #include "ChaosClothAsset/CollectionClothFacade.h"
 #include "ChaosClothAsset/ClothGeometryTools.h"
+#include "ChaosClothAsset/ClothEngineTools.h"
 #include "ChaosClothAsset/ClothAsset.h"
 #include "Chaos/CollectionPropertyFacade.h"
 #include "ChaosCloth/ChaosClothConfig.h"
 #include "ChaosCloth/ChaosClothingSimulationConfig.h"
+#include "LaceGarmentBending.h"
+#include "LaceGarmentSurface.h"
 #include "GeometryCollection/ManagedArrayCollection.h"
 #include "Materials/MaterialInterface.h"
 #include "Engine/SkeletalMesh.h"
@@ -14,16 +17,45 @@
 #include "AssetCompilingManager.h"
 #include "Distance/DistSegment3Triangle3.h"
 #include "LaceGarmentCollisionProjection.h"
+#include "Misc/ScopeExit.h"
+PRAGMA_DEFAULT_VISIBILITY_START
+THIRD_PARTY_INCLUDES_START
+#include <Eigen/SparseCholesky>
+THIRD_PARTY_INCLUDES_END
+PRAGMA_DEFAULT_VISIBILITY_END
 
 namespace LaceGarment
 {
 namespace
 {
 struct FDistanceConstraint { int32 A,B; double Rest; };
+struct FAngleConstraint { int32 A,B,C,D; double RestEdge; };
+struct FFitRow
+{
+    int32 A=INDEX_NONE,B=INDEX_NONE;
+    FVector3d GA=FVector3d::ZeroVector,GB=FVector3d::ZeroVector;
+    double Error=0;
+    int32 C=INDEX_NONE,D=INDEX_NONE;
+    FVector3d GC=FVector3d::ZeroVector,GD=FVector3d::ZeroVector;
+};
+struct FFitBlock
+{
+    FVector3d Diagonal,Cross=FVector3d::ZeroVector; // xx/yy/zz, xy/xz/yz
+    void Add(FVector3d G) { Diagonal+=G*G; Cross+=FVector3d(G.X*G.Y,G.X*G.Z,G.Y*G.Z); }
+    FVector3d Solve(FVector3d R) const
+    {
+        const double A=Diagonal.X,D=Diagonal.Y,F=Diagonal.Z,B=Cross.X,C=Cross.Y,E=Cross.Z;
+        const double XX=D*F-E*E,XY=C*E-B*F,XZ=B*E-C*D,YY=A*F-C*C,YZ=B*C-A*E,ZZ=A*D-B*B;
+        const double Det=A*XX+B*XY+C*XZ;
+        if(!FMath::IsFinite(Det) || Det<=0) return FVector3d(R.X/A,R.Y/D,R.Z/F);
+        return FVector3d(XX*R.X+XY*R.Y+XZ*R.Z,XY*R.X+YY*R.Y+YZ*R.Z,XZ*R.X+YZ*R.Y+ZZ*R.Z)/Det;
+    }
+};
 FVector3d ClosestAxisPoint(FVector3d P, const FCapsule& C)
 {
     FVector3d Axis=C.B-C.A;
     return C.A + Axis*FMath::Clamp(FVector3d::DotProduct(P-C.A,Axis)/FMath::Max(Axis.SquaredLength(),1.e-12),0.0,1.0);
+}
 }
 double FacePenetration(const FBuildResult& Build,const TArray<FVector3d>& Positions,const TArray<FCapsule>& Capsules,const TArray<FConvexCollider>& Convexes)
 {
@@ -79,6 +111,8 @@ void MeasurePanelSurface(FBuildResult& Build)
         }
     }
 }
+namespace
+{
 bool PackUV(FBuildResult& Out, FString& Error)
 {
     constexpr double Margin=16.0/2048, Gap=32.0/2048;
@@ -113,6 +147,7 @@ bool BuildGarment(const FBuildInput& Input, FBuildResult& Out, FString& Error)
     Error.Reset();
     auto Fail=[&](const TCHAR* Message) { Error=Message; return false; };
     if (Input.Panels.IsEmpty() || Input.Panels.Num()>32 || Input.MaxSteps<1 || Input.MaxSteps>10000 || Input.Iterations<1 || Input.Iterations>200
+        || Input.LinearIterations<1 || Input.LinearIterations>1000 || Input.RefinementIterations<1 || Input.RefinementIterations>128
         || !FMath::IsFinite(Input.TimeStep) || Input.TimeStep<1.0/1000 || Input.TimeStep>1.0/30
         || !FMath::IsFinite(Input.GravityCm) || FMath::Abs(Input.GravityCm)>2000
         || !FMath::IsFinite(Input.BendingStrength) || Input.BendingStrength<0 || Input.BendingStrength>1
@@ -124,7 +159,8 @@ bool BuildGarment(const FBuildInput& Input, FBuildResult& Out, FString& Error)
     if(Input.ConvexColliders.Num()>1024) return Fail(TEXT("Too many body convex colliders"));
     for(const auto& C : Input.ConvexColliders)
         if(!C.IsValid()) return Fail(TEXT("Invalid body convex collider"));
-    TArray<FDistanceConstraint> Structural, Bending;
+    TArray<FDistanceConstraint> Structural;
+    TArray<FAngleConstraint> Bending;
     for(const auto& Panel : Input.Panels)
     {
         FPanelMesh Mesh;
@@ -142,7 +178,7 @@ bool BuildGarment(const FBuildInput& Input, FBuildResult& Out, FString& Error)
                 uint64 Key=(uint64(FMath::Min(A,B))<<32)|uint32(FMath::Max(A,B));
                 const int32 Opposite=T[(K+2)%3];
                 if(const int32* Other=OppositeVertices.Find(Key))
-                    Bending.Add({Offset+*Other,Offset+Opposite,(Mesh.RestMm[*Other]-Mesh.RestMm[Opposite]).Length()/10});
+                    Bending.Add({Offset+A,Offset+B,Offset+Opposite,Offset+*Other,(Mesh.RestMm[A]-Mesh.RestMm[B]).Length()/10});
                 else OppositeVertices.Add(Key,Opposite);
                 if(!Edges.Contains(Key))
                 {
@@ -212,6 +248,26 @@ bool BuildGarment(const FBuildInput& Input, FBuildResult& Out, FString& Error)
         PinTargets.Add(Vertex,Target); Out.PinnedVertices.Add(Vertex);
     }
     if(Out.PinnedVertices.IsEmpty()) return Fail(TEXT("At least one placement anchor is required"));
+    // A closed seam is a shared degree of freedom, including transitive
+    // junctions of three or more panels. Keep the original 2D topology intact.
+    TArray<int32> Parent, ActiveRoot;
+    TArray<TArray<int32>> SeamMembers;
+    TArray<bool> Welded, Fixed;
+    const int32 Count=Out.InitialCm.Num();
+    Parent.SetNum(Count); ActiveRoot.SetNum(Count); SeamMembers.SetNum(Count);
+    Welded.Init(false,Count); Fixed.Init(false,Count);
+    for(int32 I=0;I<Count;++I) { Parent[I]=ActiveRoot[I]=I; Fixed[I]=Out.PinnedVertices.Contains(I); }
+    auto Root=[&](int32 V) { while(Parent[V]!=V) { Parent[V]=Parent[Parent[V]]; V=Parent[V]; } return V; };
+    for(auto S : Out.Stitches) { int32 A=Root(S.X), B=Root(S.Y); Parent[FMath::Max(A,B)]=FMath::Min(A,B); }
+    for(int32 I=0;I<Count;++I) SeamMembers[Root(I)].Add(I);
+    TMap<int32,FVector3d> SeamTargets;
+    for(const auto& Pin : PinTargets)
+    {
+        const int32 R=Root(Pin.Key);
+        if(const auto* Other=SeamTargets.Find(R))
+            if(!Other->Equals(Pin.Value,1.e-8)) return Fail(TEXT("Anchors on the same sewn junction have conflicting targets"));
+        SeamTargets.Add(R,Pin.Value);
+    }
     for(auto P : Out.InitialCm)
         for(const auto& C : Input.Colliders)
             if ((P-ClosestAxisPoint(P,C)).Length()<C.RadiusCm-0.01) return Fail(TEXT("Initial placement penetrates the body; move the panel before fitting"));
@@ -228,54 +284,485 @@ bool BuildGarment(const FBuildInput& Input, FBuildResult& Out, FString& Error)
     Velocity.Init(FVector3d::ZeroVector,Out.InitialCm.Num());
     TArray<double> InitialSeamLength;
     for(auto S : Out.Stitches) InitialSeamLength.Add((Out.InitialCm[S.X]-Out.InitialCm[S.Y]).Length());
+    auto SetPosition=[&](int32 R,FVector3d P)
+    {
+        Out.SettledCm[R]=P;
+        if(Welded[R]) for(int32 V : SeamMembers[R]) Out.SettledCm[V]=P;
+    };
     auto ProjectDistance=[&](int32 A,int32 B,double Length,double Strength=1.0)
     {
-        double WA=Out.PinnedVertices.Contains(A)?0:1, WB=Out.PinnedVertices.Contains(B)?0:1;
+        A=ActiveRoot[A]; B=ActiveRoot[B];
+        if(A==B) return;
+        double WA=Fixed[A]?0:1.0/(Welded[A]?SeamMembers[A].Num():1);
+        double WB=Fixed[B]?0:1.0/(Welded[B]?SeamMembers[B].Num():1);
         if(WA+WB==0) return;
         FVector3d D=Out.SettledCm[B]-Out.SettledCm[A];
         double L=D.Length();
         if(L<1.e-12) return;
         FVector3d Delta=D*(Strength*(L-Length)/(L*(WA+WB)));
-        Out.SettledCm[A]+=WA*Delta; Out.SettledCm[B]-=WB*Delta;
+        SetPosition(A,Out.SettledCm[A]+WA*Delta); SetPosition(B,Out.SettledCm[B]-WB*Delta);
+    };
+    auto ProjectBending=[&](const FAngleConstraint& E)
+    {
+        if(Input.BendingStrength==0) return;
+        const int32 Vertices[4]={E.A,E.B,E.C,E.D};
+        const auto Sample=EvaluateDihedral(Out.SettledCm[E.A],Out.SettledCm[E.B],Out.SettledCm[E.C],Out.SettledCm[E.D]);
+        const double Angle=Sample.Angle;
+        int32 Roots[4],NumRoots=0; FVector3d Gradients[4]; double Weights[4];
+        for(int32 K=0;K<4;++K)
+        {
+            const int32 R=ActiveRoot[Vertices[K]];
+            int32 Index=0; while(Index<NumRoots && Roots[Index]!=R) ++Index;
+            if(Index==NumRoots)
+            {
+                Roots[Index]=R; Gradients[Index]=FVector3d::ZeroVector;
+                Weights[Index]=Fixed[R]?0:1.0/(Welded[R]?SeamMembers[R].Num():1); ++NumRoots;
+            }
+            Gradients[Index]+=Sample.Gradient[K];
+        }
+        double Denominator=0;
+        for(int32 K=0;K<NumRoots;++K) Denominator+=Weights[K]*Gradients[K].SquaredLength();
+        if(Denominator<1.e-12 || !FMath::IsFinite(Denominator) || !FMath::IsFinite(Angle)) return;
+        const double Delta=Input.BendingStrength*FMath::Clamp(double(Angle),-UE_PI*.25,UE_PI*.25)/Denominator;
+        for(int32 K=0;K<NumRoots;++K) SetPosition(Roots[K],Out.SettledCm[Roots[K]]-Gradients[K]*(Weights[K]*Delta));
+    };
+    // Surface contact samples share the original vertices: they do not alter
+    // authored topology, skin correspondence, or the final continuous face test.
+    struct FSurfaceSample { FIntVector Vertices; FVector3d Weights; };
+    TArray<FSurfaceSample> SurfaceSamples;
+    for(const auto& E : Structural) SurfaceSamples.Add({FIntVector(E.A,E.B,E.B),FVector3d(.5,.5,0)});
+    for(int32 Panel=0;Panel<Out.Panels.Num();++Panel) for(const auto T : Out.Panels[Panel].Triangles)
+    {
+        const int32 O=Out.Offsets[Panel];
+        SurfaceSamples.Add({FIntVector(O+T.X,O+T.Y,O+T.Z),FVector3d(1.0/3,1.0/3,1.0/3)});
+    }
+    const double SurfaceClearance=Input.ThicknessCm+1.e-5;
+    auto SweepSurfaceSamples=[&](const TArray<FVector3d>& Previous)
+    {
+        for(const auto& Sample : SurfaceSamples)
+        {
+            const auto V=Sample.Vertices; const auto W=Sample.Weights;
+            const FVector3d Before=Previous[V.X]*W.X+Previous[V.Y]*W.Y+Previous[V.Z]*W.Z;
+            const FVector3d Current=Out.SettledCm[V.X]*W.X+Out.SettledCm[V.Y]*W.Y+Out.SettledCm[V.Z]*W.Z;
+            const FVector3d Delta=SweepBodyCollision(Before,Current,Input.Colliders,Input.ThicknessCm,Input.ConvexColliders)-Current;
+            if(Delta.SquaredLength()<1.e-20) continue;
+            int32 Roots[3],NumRoots=0; double Barycentric[3]={},Mobility[3]={};
+            for(int32 K=0;K<3;++K)
+            {
+                if(W[K]==0) continue;
+                const int32 R=ActiveRoot[V[K]];
+                int32 Index=0; while(Index<NumRoots && Roots[Index]!=R) ++Index;
+                if(Index==NumRoots)
+                {
+                    Roots[Index]=R; Mobility[Index]=Fixed[R]?0:1.0/(Welded[R]?SeamMembers[R].Num():1); ++NumRoots;
+                }
+                Barycentric[Index]+=W[K];
+            }
+            double Denominator=0;
+            for(int32 K=0;K<NumRoots;++K) Denominator+=Mobility[K]*FMath::Square(Barycentric[K]);
+            if(Denominator<1.e-12) continue;
+            for(int32 K=0;K<NumRoots;++K)
+                SetPosition(Roots[K],Out.SettledCm[Roots[K]]+Delta*(Mobility[K]*Barycentric[K]/Denominator));
+        }
+    };
+    auto VisitSurfaceContacts=[&](const TArray<FVector3d>& Positions,auto&& Visit)
+    {
+        for(const auto& Sample : SurfaceSamples)
+        {
+            const auto V=Sample.Vertices; const auto W=Sample.Weights;
+            const FVector3d P=Positions[V.X]*W.X+Positions[V.Y]*W.Y+Positions[V.Z]*W.Z;
+            auto Contact=[&](double Phi,FVector3d Normal)
+            {
+                if(Phi<SurfaceClearance && !Normal.ContainsNaN() && Normal.SquaredLength()>.5)
+                    Visit(Sample,Phi-SurfaceClearance,Normal);
+            };
+            for(const auto& C : Input.Colliders)
+            {
+                const FVector3d D=P-ClosestAxisPoint(P,C);
+                Contact(D.Length()-C.RadiusCm,D.GetSafeNormal());
+            }
+            for(const auto& C : Input.ConvexColliders)
+            {
+                if(!C.GetBounds().ExpandBy(SurfaceClearance).IsInsideOrOn(P)) continue;
+                FVector3d Normal; const double Phi=C.SignedDistance(P,Normal); Contact(Phi,Normal);
+            }
+        }
+    };
+    auto RefineGlobally=[&](const TArray<FVector3d>& Previous,const TArray<FVector3d>& Prediction)
+    {
+        const double RefinementStart=FPlatformTime::Seconds();
+        ON_SCOPE_EXIT { Out.RefinementSeconds+=FPlatformTime::Seconds()-RefinementStart; };
+        ++Out.RefinementIterationsTotal;
+        // Damped Gauss-Newton on active strain/contact inequalities. The sparse
+        // normal system defaults to matrix-free PCG, with engine-bundled sparse
+        // LDLT available for diagnostic comparison; no external process is required.
+        // Gravity and continuous collision remain active. The refinement phase
+        // is overdamped so Newton corrections are not fed back as inertial kicks.
+        TArray<int32> Variable,Vertex;
+        Variable.Init(INDEX_NONE,Count);
+        for(int32 I=0;I<Count;++I) if(ActiveRoot[I]==I && !Fixed[I]) { Variable[I]=Vertex.Num(); Vertex.Add(I); }
+        const int32 N=Vertex.Num(); if(N==0) return;
+        const double InitialSweepStart=FPlatformTime::Seconds();
+        for(int32 R : Vertex) SetPosition(R,SweepBodyCollision(Previous[R],Out.SettledCm[R],Input.Colliders,Input.ThicknessCm,Input.ConvexColliders));
+        Out.CollisionSweepSeconds+=FPlatformTime::Seconds()-InitialSweepStart;
+        TArray<FFitRow> Rows;
+        for(const auto& E : Structural)
+        {
+            const int32 RA=ActiveRoot[E.A],RB=ActiveRoot[E.B];
+            const int32 A=Variable[RA],B=Variable[RB];
+            if(RA==RB || (A==INDEX_NONE && B==INDEX_NONE)) continue;
+            const FVector3d D=Out.SettledCm[RB]-Out.SettledCm[RA]; const double L=D.Length();
+            if(L<1.e-12) continue;
+            const double Target=FMath::Clamp(L,E.Rest*.95,E.Rest*1.05);
+            // Compare relative strain, as the acceptance metric does. Absolute
+            // centimetre residuals underweight short boundary samples and let
+            // them absorb the error of their much longer interior neighbours.
+            if(FMath::Abs(L-Target)>1.e-8) Rows.Add({A,B,-D/(L*E.Rest),D/(L*E.Rest),(L-Target)/E.Rest});
+        }
+        const double AngularWeight=.1*FMath::Sqrt(Input.BendingStrength);
+        if(AngularWeight>0) for(const auto& E : Bending)
+        {
+            const auto Sample=EvaluateDihedral(Out.SettledCm[E.A],Out.SettledCm[E.B],Out.SettledCm[E.C],Out.SettledCm[E.D]);
+            const auto& G=Sample.Gradient; const double Angle=Sample.Angle;
+            const double W=AngularWeight;
+            FFitRow Row;
+            Row.A=Variable[ActiveRoot[E.A]]; Row.B=Variable[ActiveRoot[E.B]]; Row.C=Variable[ActiveRoot[E.C]]; Row.D=Variable[ActiveRoot[E.D]];
+            Row.GA=FVector3d(G[0])*W; Row.GB=FVector3d(G[1])*W; Row.GC=FVector3d(G[2])*W; Row.GD=FVector3d(G[3])*W; Row.Error=Angle*W;
+            if(FMath::IsFinite(Row.Error) && !Row.GA.ContainsNaN() && !Row.GB.ContainsNaN() && !Row.GC.ContainsNaN() && !Row.GD.ContainsNaN()) Rows.Add(Row);
+        }
+        constexpr double ContactWeight=4, Regularization=.02;
+        const double Clearance=Input.ThicknessCm+1.e-5;
+        VisitSurfaceContacts(Out.SettledCm,[&](const FSurfaceSample& Sample,double Distance,FVector3d Normal)
+        {
+            FFitRow Row;
+            Row.A=Variable[ActiveRoot[Sample.Vertices.X]]; Row.B=Variable[ActiveRoot[Sample.Vertices.Y]];
+            Row.C=Sample.Weights.Z>0?Variable[ActiveRoot[Sample.Vertices.Z]]:INDEX_NONE;
+            Row.GA=Normal*(ContactWeight*Sample.Weights.X); Row.GB=Normal*(ContactWeight*Sample.Weights.Y);
+            Row.GC=Normal*(ContactWeight*Sample.Weights.Z); Row.Error=Distance*ContactWeight;
+            if(Row.A!=INDEX_NONE || Row.B!=INDEX_NONE || Row.C!=INDEX_NONE) Rows.Add(Row);
+        });
+        for(int32 I=0;I<N;++I)
+        {
+            const FVector3d P=Out.SettledCm[Vertex[I]];
+            auto AddContact=[&](double Phi,FVector3d Normal)
+            {
+                if(Phi<Clearance && !Normal.ContainsNaN() && Normal.SquaredLength()>.5)
+                    Rows.Add({I,INDEX_NONE,Normal*ContactWeight,FVector3d::ZeroVector,(Phi-Clearance)*ContactWeight});
+            };
+            for(const auto& C : Input.Colliders)
+            {
+                const FVector3d D=P-ClosestAxisPoint(P,C);
+                AddContact(D.Length()-C.RadiusCm,D.GetSafeNormal());
+            }
+            for(const auto& C : Input.ConvexColliders)
+            {
+                if(!C.GetBounds().ExpandBy(Clearance).IsInsideOrOn(P)) continue;
+                FVector3d Normal; const double Phi=C.SignedDistance(P,Normal); AddContact(Phi,Normal);
+            }
+        }
+        TArray<FVector3d> RHS,Delta,Residual,Z,Direction,Product;
+        TArray<FFitBlock> Blocks;
+        TArray<double> Damping;
+        TArray<TArray<FVector3d,TInlineAllocator<3>>> ContactBasis;
+        ContactBasis.SetNum(N);
+        auto Tangent=[&](int32 I,FVector3d V)
+        {
+            if(I!=INDEX_NONE) for(auto Normal : ContactBasis[I]) V-=Normal*FVector3d::DotProduct(V,Normal);
+            return V;
+        };
+        for(int32 I=0;I<N;++I)
+        {
+            const int32 R=Vertex[I]; const double D=Regularization*(Welded[R]?SeamMembers[R].Num():1);
+            Damping.Add(D);
+        }
+        auto Dot=[&](const TArray<FVector3d>& A,const TArray<FVector3d>& B)
+        { double Sum=0; for(int32 I=0;I<N;++I) Sum+=FVector3d::DotProduct(A[I],B[I]); return Sum; };
+        auto Precondition=[&](const TArray<FVector3d>& R,TArray<FVector3d>& Result)
+        {
+            Result.SetNum(N);
+            for(int32 I=0;I<N;++I) Result[I]=Tangent(I,Blocks[I].Solve(R[I]));
+        };
+        auto SolveLinear=[&]()
+        {
+        const double LinearStart=FPlatformTime::Seconds();
+        ON_SCOPE_EXIT { Out.LinearSolveSeconds+=FPlatformTime::Seconds()-LinearStart; };
+        TArray<FFitRow> WorkingRows=Rows;
+        RHS.Init(FVector3d::ZeroVector,N); Delta=RHS; Product=RHS; Blocks.Reset();
+        for(int32 I=0;I<N;++I)
+        {
+            Blocks.Add({FVector3d(Damping[I],Damping[I],Damping[I])});
+            RHS[I]=-Tangent(I,Out.SettledCm[Vertex[I]]-Prediction[Vertex[I]])*Damping[I];
+        }
+        for(auto& Row : WorkingRows)
+        {
+            Row.GA=Tangent(Row.A,Row.GA); Row.GB=Tangent(Row.B,Row.GB);
+            Row.GC=Tangent(Row.C,Row.GC); Row.GD=Tangent(Row.D,Row.GD);
+            if(Row.A!=INDEX_NONE) { RHS[Row.A]-=Row.GA*Row.Error; Blocks[Row.A].Add(Row.GA); }
+            if(Row.B!=INDEX_NONE) { RHS[Row.B]-=Row.GB*Row.Error; Blocks[Row.B].Add(Row.GB); }
+            if(Row.C!=INDEX_NONE) { RHS[Row.C]-=Row.GC*Row.Error; Blocks[Row.C].Add(Row.GC); }
+            if(Row.D!=INDEX_NONE) { RHS[Row.D]-=Row.GD*Row.Error; Blocks[Row.D].Add(Row.GD); }
+        }
+        // Optional exact linear solve for diagnosing iteration-cutoff effects.
+        // Large source meshes keep the bounded matrix-free PCG path below.
+        if(Input.bDirectLinearSolve && N<=4096)
+        {
+            TArray<Eigen::Triplet<double>> Entries;
+            Entries.Reserve(N*3+WorkingRows.Num()*60);
+            Eigen::VectorXd B(3*N);
+            for(int32 I=0;I<N;++I) for(int32 K=0;K<3;++K)
+            { Entries.Emplace(3*I+K,3*I+K,Damping[I]); B[3*I+K]=RHS[I][K]; }
+            for(const auto& Row : WorkingRows)
+            {
+                const int32 Indices[4]={Row.A,Row.B,Row.C,Row.D};
+                const FVector3d G[4]={Row.GA,Row.GB,Row.GC,Row.GD};
+                int32 Columns[12],Size=0; double Values[12];
+                for(int32 I=0;I<4;++I) if(Indices[I]!=INDEX_NONE) for(int32 K=0;K<3;++K)
+                    if(FMath::Abs(G[I][K])>1.e-16) { Columns[Size]=3*Indices[I]+K; Values[Size++]=G[I][K]; }
+                for(int32 I=0;I<Size;++I) for(int32 J=0;J<Size;++J)
+                    Entries.Emplace(Columns[I],Columns[J],Values[I]*Values[J]);
+            }
+            Eigen::SparseMatrix<double> Matrix(3*N,3*N);
+            Matrix.setFromTriplets(Entries.GetData(),Entries.GetData()+Entries.Num());
+            Eigen::SimplicialLDLT<Eigen::SparseMatrix<double>> Solver;
+            Solver.compute(Matrix);
+            if(Solver.info()==Eigen::Success)
+            {
+                const Eigen::VectorXd X=Solver.solve(B);
+                if(Solver.info()==Eigen::Success && X.allFinite())
+                {
+                    const double Absolute=(Matrix*X-B).norm();
+                    const double Relative=Absolute/FMath::Max(B.norm(),1.e-15);
+                    if(Relative<1.e-7 || Absolute<1.e-8)
+                    {
+                        for(int32 I=0;I<N;++I) Delta[I]=Tangent(I,FVector3d(X[3*I],X[3*I+1],X[3*I+2]));
+                        Out.LastLinearRelativeResidual=Relative; ++Out.DirectLinearSolves; return;
+                    }
+                }
+            }
+        }
+        ++Out.IterativeLinearSolves;
+        Residual=RHS; Precondition(Residual,Z); Direction=Z; double RZ=Dot(Residual,Z);
+        for(int32 Iter=0;Iter<Input.LinearIterations && RZ>1.e-24;++Iter)
+        {
+            for(int32 I=0;I<N;++I) Product[I]=Direction[I]*Damping[I];
+            for(const auto& Row : WorkingRows)
+            {
+                double V=0;
+                if(Row.A!=INDEX_NONE) V+=FVector3d::DotProduct(Row.GA,Direction[Row.A]);
+                if(Row.B!=INDEX_NONE) V+=FVector3d::DotProduct(Row.GB,Direction[Row.B]);
+                if(Row.C!=INDEX_NONE) V+=FVector3d::DotProduct(Row.GC,Direction[Row.C]);
+                if(Row.D!=INDEX_NONE) V+=FVector3d::DotProduct(Row.GD,Direction[Row.D]);
+                if(Row.A!=INDEX_NONE) Product[Row.A]+=Row.GA*V;
+                if(Row.B!=INDEX_NONE) Product[Row.B]+=Row.GB*V;
+                if(Row.C!=INDEX_NONE) Product[Row.C]+=Row.GC*V;
+                if(Row.D!=INDEX_NONE) Product[Row.D]+=Row.GD*V;
+            }
+            const double Denominator=Dot(Direction,Product);
+            if(Denominator<1.e-24 || !FMath::IsFinite(Denominator)) break;
+            const double Alpha=RZ/Denominator;
+            for(int32 I=0;I<N;++I) { Delta[I]+=Direction[I]*Alpha; Residual[I]-=Product[I]*Alpha; }
+            if(Dot(Residual,Residual)<1.e-16) break;
+            Precondition(Residual,Z); const double Next=Dot(Residual,Z);
+            for(int32 I=0;I<N;++I) Direction[I]=Z[I]+Direction[I]*(Next/RZ);
+            RZ=Next;
+        }
+        Out.LastLinearRelativeResidual=FMath::Sqrt(Dot(Residual,Residual)/FMath::Max(Dot(RHS,RHS),1.e-30));
+        };
+        SolveLinear();
+        // Solve the contact tangent space before applying a coupled correction.
+        // Clipping an unconstrained Newton step afterwards destroys its coupling
+        // to neighbouring vertices. Only inward directions activate a contact;
+        // the basis is rebuilt each nonlinear iteration so contact can release.
+        for(int32 ActiveSet=0;ActiveSet<3;++ActiveSet)
+        {
+            bool Added=false;
+            for(int32 I=0;I<N;++I)
+            {
+                const auto P=Out.SettledCm[Vertex[I]];
+                auto Activate=[&](double Phi,FVector3d Normal)
+                {
+                    if(Phi>Clearance+.001 || FVector3d::DotProduct(Delta[I],Normal)>=-1.e-9) return;
+                    Normal=Tangent(I,Normal);
+                    if(Normal.SquaredLength()<1.e-6 || ContactBasis[I].Num()>=3) return;
+                    ContactBasis[I].Add(Normal.GetSafeNormal()); Added=true;
+                };
+                for(const auto& C : Input.Colliders)
+                {
+                    const auto D=P-ClosestAxisPoint(P,C); Activate(D.Length()-C.RadiusCm,D.GetSafeNormal());
+                }
+                for(const auto& C : Input.ConvexColliders)
+                {
+                    if(!C.GetBounds().ExpandBy(Clearance+.001).IsInsideOrOn(P)) continue;
+                    FVector3d Normal; const double Phi=C.SignedDistance(P,Normal); Activate(Phi,Normal);
+                }
+            }
+            if(!Added) break;
+            SolveLinear();
+        }
+        auto Energy=[&](const TArray<FVector3d>& Positions)
+        {
+            const double EnergyStart=FPlatformTime::Seconds();
+            ON_SCOPE_EXIT { Out.EnergyEvaluationSeconds+=FPlatformTime::Seconds()-EnergyStart; };
+            double Value=0;
+            VisitSurfaceContacts(Positions,[&](const FSurfaceSample&,double Distance,FVector3d)
+            { Value+=FMath::Square(ContactWeight*Distance); });
+            for(const auto& E : Structural)
+            {
+                const double L=(Positions[E.A]-Positions[E.B]).Length();
+                Value+=FMath::Square((L-FMath::Clamp(L,E.Rest*.95,E.Rest*1.05))/E.Rest);
+            }
+            if(AngularWeight>0) for(const auto& E : Bending)
+            {
+                const double Angle=EvaluateDihedral(Positions[E.A],Positions[E.B],Positions[E.C],Positions[E.D]).Angle;
+                Value+=FMath::Square(AngularWeight*Angle);
+            }
+            for(int32 I=0;I<N;++I)
+            {
+                const int32 R=Vertex[I]; const auto P=Positions[R];
+                Value+=Damping[I]*(P-Prediction[R]).SquaredLength();
+                for(const auto& C : Input.Colliders)
+                    Value+=FMath::Square(ContactWeight*FMath::Min(0.0,(P-ClosestAxisPoint(P,C)).Length()-C.RadiusCm-Clearance));
+                for(const auto& C : Input.ConvexColliders)
+                {
+                    if(!C.GetBounds().ExpandBy(Clearance).IsInsideOrOn(P)) continue;
+                    FVector3d Normal; Value+=FMath::Square(ContactWeight*FMath::Min(0.0,C.SignedDistance(P,Normal)-Clearance));
+                }
+            }
+            return Value;
+        };
+        const double BeforeEnergy=Energy(Out.SettledCm);
+        // Active bounds/normals can change during a Newton step. Backtracking
+        // uses the actual swept result and nonlinear residual, preventing a
+        // two-cycle between different contact/strain active sets.
+        for(int32 Attempt=0;Attempt<2;++Attempt)
+        {
+            // Contact projection can turn a Newton direction into an ascent
+            // direction. Fall back to the diagonally scaled negative gradient
+            // instead of getting stuck with a nonzero constraint residual.
+            if(Attempt==1) Precondition(RHS,Delta);
+            double Maximum=0; for(auto D : Delta) Maximum=FMath::Max(Maximum,D.Length());
+            const double Scale=FMath::Min(1.0,.03/FMath::Max(Maximum,1.e-12));
+            for(int32 Search=0;Search<16;++Search)
+            {
+                ++Out.LineSearchTrials;
+                TArray<FVector3d> Candidate=Out.SettledCm;
+                const double TrialScale=Scale*FMath::Pow(.5,Search);
+                const double SweepStart=FPlatformTime::Seconds();
+                for(int32 I=0;I<N;++I)
+                {
+                    const int32 R=Vertex[I];
+                    const auto P=SweepBodyCollision(Out.SettledCm[R],Out.SettledCm[R]+Delta[I]*TrialScale,Input.Colliders,Input.ThicknessCm,Input.ConvexColliders);
+                    Candidate[R]=P; if(Welded[R]) for(int32 V : SeamMembers[R]) Candidate[V]=P;
+                }
+                Out.CollisionSweepSeconds+=FPlatformTime::Seconds()-SweepStart;
+                if(Energy(Candidate)<BeforeEnergy) { Out.SettledCm=MoveTemp(Candidate); return; }
+            }
+        }
     };
     int32 StableFrames=0;
     for(int32 Step=0; Step<Input.MaxSteps; ++Step)
     {
+        for(int32 R=0;R<Count;++R)
+        {
+            if(Welded[R] || SeamMembers[R].Num()<2) continue;
+            if(Step<60)
+            {
+                bool InitiallyClosed=true;
+                for(int32 V : SeamMembers[R]) if(!Out.InitialCm[V].Equals(Out.InitialCm[R],1.e-10)) { InitiallyClosed=false; break; }
+                if(!InitiallyClosed) continue;
+            }
+            FVector3d Center=FVector3d::ZeroVector, MeanVelocity=FVector3d::ZeroVector;
+            for(int32 V : SeamMembers[R]) { Center+=Out.SettledCm[V]; MeanVelocity+=Velocity[V]; }
+            Center/=SeamMembers[R].Num(); MeanVelocity/=SeamMembers[R].Num();
+            if(const auto* Target=SeamTargets.Find(R)) Center=FMath::Lerp(Out.InitialCm[R],*Target,FMath::Min(Step/60.0,1.0));
+            bool Safe=true;
+            for(int32 V : SeamMembers[R])
+                if((Out.SettledCm[V]-Center).Length()>.02
+                    || !SweepBodyCollision(Out.SettledCm[V],Center,Input.Colliders,Input.ThicknessCm,Input.ConvexColliders).Equals(Center,1.e-7))
+                { Safe=false; break; }
+            // Never weld through a body or silently close an unfinished seam.
+            if(!Safe) continue;
+            Welded[R]=true; Fixed[R]=SeamTargets.Contains(R);
+            for(int32 V : SeamMembers[R]) { ActiveRoot[V]=R; Velocity[V]=Fixed[R]?FVector3d::ZeroVector:MeanVelocity; }
+            SetPosition(R,Center);
+        }
         TArray<FVector3d> Previous=Out.SettledCm;
         TArray<FVector3d> ContactPrevious=Previous;
+        bool GlobalFit=Step>=120;
+        if(GlobalFit) for(auto S : Out.Stitches) if(ActiveRoot[S.X]!=ActiveRoot[S.Y]) { GlobalFit=false; break; }
         for(int32 I=0; I<Velocity.Num(); ++I)
         {
-            if(Out.PinnedVertices.Contains(I)) continue;
-            Velocity[I]*=0.9;
+            if(ActiveRoot[I]!=I || Fixed[I]) continue;
+            Velocity[I]*=GlobalFit?0.0:0.9;
             Velocity[I].Z+=Input.GravityCm*Input.TimeStep;
-            Out.SettledCm[I]+=Velocity[I]*Input.TimeStep;
+            SetPosition(I,Out.SettledCm[I]+Velocity[I]*Input.TimeStep);
         }
         const double Closing=FMath::Clamp((Step+1)/60.0,0.0,1.0);
-        for(const auto& Target : PinTargets) Out.SettledCm[Target.Key]=FMath::Lerp(Out.InitialCm[Target.Key],Target.Value,Closing);
-        for(int32 Iter=0; Iter<Input.Iterations; ++Iter)
+        for(const auto& Target : PinTargets) SetPosition(ActiveRoot[Target.Key],FMath::Lerp(Out.InitialCm[Target.Key],Target.Value,Closing));
+        if(GlobalFit)
         {
-            // Weak opposite-vertex springs regularize panel bending while
-            // permitting a curved drape. They do not bridge authored seams.
-            for(const auto& E : Bending) ProjectDistance(E.A,E.B,E.Rest,Input.BendingStrength);
+            const TArray<FVector3d> Prediction=Out.SettledCm;
+            // The gravity prediction belongs in the proximal objective, not in
+            // the initial feasible iterate. A projected prediction can increase
+            // elastic energy before line search starts; an incomplete nonlinear
+            // solve then repeats that impulse and can chatter indefinitely.
+            // Starting from the previous feasible state makes every accepted
+            // correction decrease the same gravity-inclusive objective. Gravity
+            // is still present through (Position - Prediction) in the RHS/energy.
+            Out.SettledCm=Previous;
+            Out.LastNonlinearIterations=0;
+            // A single linearization leaves too much of the gravity prediction
+            // unresolved on a garment-sized graph. Rebuild the active set and
+            // nonlinear derivatives while keeping gravity integration once per
+            // time step, just as in the sequential projection phase.
+            for(int32 Nonlinear=0;Nonlinear<Input.RefinementIterations;++Nonlinear)
+            {
+                const TArray<FVector3d> Before=Out.SettledCm;
+                RefineGlobally(ContactPrevious,Prediction);
+                ++Out.LastNonlinearIterations;
+                ContactPrevious=Out.SettledCm;
+                double Movement=0;
+                for(int32 I=0;I<Count;++I) Movement=FMath::Max(Movement,(Out.SettledCm[I]-Before[I]).SquaredLength());
+                Out.LastRefinementCorrectionCm=FMath::Sqrt(Movement);
+                if(Movement<1.e-12) break;
+            }
+            ++Out.RefinementSteps;
+        }
+        else for(int32 Iter=0; Iter<Input.Iterations; ++Iter)
+        {
+            // Bending changes the angle between faces, not in-plane distances.
+            // Rest panels are flat; authored seams are not bending constraints.
+            for(const auto& E : Bending) ProjectBending(E);
             // Alternate sweep direction to reduce systematic directional bias.
             for(int32 J=0; J<Structural.Num(); ++J)
             {
                 const auto& E=Structural[(Iter&1)?Structural.Num()-1-J:J];
-                ProjectDistance(E.A,E.B,E.Rest);
+                // After sewing, solve a bounded rest-metric feasibility problem.
+                // Exact-length projections otherwise concentrate unavoidable ease
+                // next to pins while repeatedly undoing neighbouring corrections.
+                // The 5% band retains margin below the independent 10% acceptance
+                // limit; source rest lengths and final measurements never change.
+                const double Current=(Out.SettledCm[E.A]-Out.SettledCm[E.B]).Length();
+                const double Target=Closing<1?E.Rest:FMath::Clamp(Current,E.Rest*.95,E.Rest*1.05);
+                ProjectDistance(E.A,E.B,Target);
             }
             for(int32 J=0; J<Out.Stitches.Num(); ++J)
                 ProjectDistance(Out.Stitches[J].X,Out.Stitches[J].Y,InitialSeamLength[J]*(1-Closing));
+            SweepSurfaceSamples(ContactPrevious);
             for(int32 I=0; I<Out.SettledCm.Num(); ++I)
             {
-                if(Out.PinnedVertices.Contains(I)) continue;
-                Out.SettledCm[I]=SweepBodyCollision(ContactPrevious[I],Out.SettledCm[I],Input.Colliders,Input.ThicknessCm,Input.ConvexColliders);
-                ContactPrevious[I]=Out.SettledCm[I];
+                if(ActiveRoot[I]!=I || Fixed[I]) continue;
+                SetPosition(I,SweepBodyCollision(ContactPrevious[I],Out.SettledCm[I],Input.Colliders,Input.ThicknessCm,Input.ConvexColliders));
             }
+            // Include welded members: surface samples reference original indices.
+            ContactPrevious=Out.SettledCm;
         }
         Out.MaxSpeedCmPerSec=0;
+        Out.LastStepDisplacementCm.SetNum(Velocity.Num());
         for(int32 I=0; I<Velocity.Num(); ++I)
         {
-            Velocity[I]=(Out.SettledCm[I]-Previous[I])/Input.TimeStep;
+            Out.LastStepDisplacementCm[I]=Out.SettledCm[I]-Previous[I];
+            Velocity[I]=Out.LastStepDisplacementCm[I]/Input.TimeStep;
             if(Velocity[I].ContainsNaN() || Velocity[I].SquaredLength()>1.e12) return Fail(TEXT("Fitting diverged; revise placement and seams"));
             Out.MaxSpeedCmPerSec=FMath::Max(Out.MaxSpeedCmPerSec,Velocity[I].Length());
         }
@@ -291,10 +778,16 @@ bool BuildGarment(const FBuildInput& Input, FBuildResult& Out, FString& Error)
             Out.MaxPenetrationCm=FMath::Max(Out.MaxPenetrationCm,Input.ThicknessCm-C.SignedDistance(P,Normal));
         }
         Out.Steps=Step+1;
-        if(Input.Progress && (Out.Steps%120==0 || Out.Steps==Input.MaxSteps)) Input.Progress(Out);
+        if(Input.Progress && (Out.Steps%30==0 || Out.Steps==Input.MaxSteps)) Input.Progress(Out);
         if (Step>=60 && Out.MaxSpeedCmPerSec<0.05 && Out.MaxSeamGapCm<0.02 && Out.MaxRelativeEdgeError<0.1 && Out.MaxPenetrationCm<0.005) ++StableFrames;
         else StableFrames=0;
-        if(StableFrames>=30) { Out.bConverged=true; break; }
+        if(StableFrames>=30)
+        {
+            // Vertex rest alone cannot finish while a face still cuts the body.
+            if(FacePenetration(Out,Out.SettledCm,Input.Colliders,Input.ConvexColliders)<=.005)
+            { Out.bConverged=true; break; }
+            StableFrames=0;
+        }
     }
     // Failed fits also need real surface diagnostics; zero must not mean unmeasured.
     MeasurePanelSurface(Out);
@@ -438,6 +931,10 @@ TSharedPtr<FManagedArrayCollection> MakeClothCollection(const FBuildResult& Buil
     if(!Build.MaxDistancesCm.IsEmpty())
         for(int32 I=0;I<NumVertices;++I) Map[Lookup[I]]=Build.MaxDistancesCm[I];
     for(int32 Pin : Build.PinnedVertices) Map[Lookup[Pin]]=0;
+    // The runtime property alone does not create attachment data. Generate it
+    // after welding and final MaxDistance corrections, using the native mesh
+    // geodesics so cloth can bend while resisting accumulated stretch at pins.
+    FClothEngineTools::GenerateTethers(Collection,TEXT("MaxDistance"),true);
     // Copy canonical UE properties once into an empty property group. CopyTo is
     // not an overwrite operation for groups of a different size.
     UChaosClothConfig* Config=NewObject<UChaosClothConfig>();

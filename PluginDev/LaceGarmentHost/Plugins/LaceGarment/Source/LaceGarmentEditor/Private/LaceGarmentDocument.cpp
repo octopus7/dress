@@ -52,7 +52,8 @@ bool ULaceGarmentDocument::ValidateStructure(FString& Error) const
         if(Piece.Points.Num()>1024 || Piece.Edges.Num()>2048 || Piece.Holes.Num()>32 || Piece.Notches.Num()>1024 || Piece.Name.Len()>256)
             return Fail(TEXT("Piece exceeds authoring limits"));
         if(!ValidPoint(Piece.Grain) || Piece.Grain.SquaredLength()<1.e-12 || !Piece.InitialPlacementCm.IsValid()
-            || Piece.InitialPlacementCm.GetTranslation().GetAbsMax()>10000 || !Piece.InitialPlacementCm.GetScale3D().Equals(FVector::OneVector,1.e-6))
+            || Piece.InitialPlacementCm.GetTranslation().GetAbsMax()>10000 || !Piece.InitialPlacementCm.GetScale3D().Equals(FVector::OneVector,1.e-6)
+            || !FMath::IsFinite(Piece.InitialWrapRadiusCm) || Piece.InitialWrapRadiusCm<0 || Piece.InitialWrapRadiusCm>10000)
             return Fail(TEXT("Piece grain or initial placement is invalid"));
         for(const auto& Point : Piece.Points)
             if(!AddID(Point.Id) || !ValidPoint(Point.PositionMm)) return Fail(TEXT("Control point identifier or position is invalid"));

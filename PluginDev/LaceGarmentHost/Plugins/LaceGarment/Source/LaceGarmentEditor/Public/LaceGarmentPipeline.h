@@ -65,18 +65,24 @@ struct FBuildInput
     TArray<FPin> Pins;
     int32 MaxSteps = 4800;
     int32 Iterations = 100;
+    int32 LinearIterations = 200;
+    int32 RefinementIterations = 32;
     double TimeStep = 1.0/480.0;
     double GravityCm = -980;
     double ThicknessCm = 0.03;
-    // Opposite-vertex regularization, not a calibrated material stiffness.
+    // Dihedral angle correction per iteration, not calibrated material stiffness.
     double BendingStrength = 0.05;
     TFunction<void(const FBuildResult&)> Progress;
+    // Development comparison of direct factorization versus matrix-free PCG.
+    bool bDirectLinearSolve = false;
 };
 struct FBuildResult
 {
     TArray<FPanelMesh> Panels;
     TArray<int32> Offsets;
     TArray<FVector3d> InitialCm, SettledCm;
+    // Measured final integration-step displacement, including failed fits.
+    TArray<FVector3d> LastStepDisplacementCm;
     TArray<FVector2f> UV;
     TArray<FIntVector2> Stitches;
     TSet<int32> PinnedVertices;
@@ -95,6 +101,13 @@ struct FBuildResult
     double MaxSpeedCmPerSec = 0;
     double TexelsPerCm = 0;
     int32 Steps = 0;
+    int32 RefinementSteps = 0;
+    int32 LastNonlinearIterations = 0;
+    double LastRefinementCorrectionCm = 0;
+    double LastLinearRelativeResidual = 0;
+    int32 DirectLinearSolves = 0, IterativeLinearSolves = 0;
+    double RefinementSeconds = 0, LinearSolveSeconds = 0, CollisionSweepSeconds = 0, EnergyEvaluationSeconds = 0;
+    int32 RefinementIterationsTotal = 0, LineSearchTrials = 0;
     bool bConverged = false;
     bool bSurfaceMeasured = false;
 };
@@ -105,6 +118,8 @@ LACEGARMENTEDITOR_API bool BuildGarment(const FBuildInput& Input, FBuildResult& 
 // Reference-pose body collision in mesh component-space centimetres. Atomic on failure.
 LACEGARMENTEDITOR_API bool ReadBodyCollision(USkeletalMesh* Body,TArray<FCapsule>& Out,FString& Error);
 LACEGARMENTEDITOR_API bool ReadBodyCollision(USkeletalMesh* Body,TArray<FCapsule>& Out,TArray<FConvexCollider>& Convexes,FString& Error);
+// Explicit component-space bone pose for runtime pose inspection. Atomic on failure.
+LACEGARMENTEDITOR_API bool ReadBodyCollision(USkeletalMesh* Body,TConstArrayView<FTransform> ComponentPose,TArray<FCapsule>& Out,TArray<FConvexCollider>& Convexes,FString& Error);
 LACEGARMENTEDITOR_API bool BuildConvexCollider(TConstArrayView<FVector3d> Points,FConvexCollider& Out,FString& Error);
 LACEGARMENTEDITOR_API bool TransferBodySkin(FBuildResult& Build, USkeletalMesh* Body, FString& Error, EBodySkinTransfer Method=EBodySkinTransfer::BarycentricStrict);
 LACEGARMENTEDITOR_API TSharedPtr<FManagedArrayCollection> MakeClothCollection(const FBuildResult& Build, UMaterialInterface* Material, FString& Error);

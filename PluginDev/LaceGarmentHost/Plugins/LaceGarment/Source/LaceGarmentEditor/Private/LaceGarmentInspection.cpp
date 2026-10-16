@@ -11,6 +11,7 @@
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "RenderingThread.h"
+#include "Misc/ScopeExit.h"
 
 bool LaceGarment::CaptureInspectionViews(UWorld* World,const FString& Directory,FVector Center,float OrthoWidth,const TArray<FVector>& Cameras)
 {
@@ -19,6 +20,12 @@ bool LaceGarment::CaptureInspectionViews(UWorld* World,const FString& Directory,
     auto* Fill=World->SpawnActor<ADirectionalLight>();
     Fill->SetActorRotation(FRotator(-15,135,0)); Fill->GetLightComponent()->SetIntensity(2);
     auto* Camera=World->SpawnActor<ASceneCapture2D>();
+    ON_SCOPE_EXIT
+    {
+        World->DestroyActor(Camera);
+        World->DestroyActor(Fill);
+        World->DestroyActor(Light);
+    };
     UTextureRenderTarget2D* Target=NewObject<UTextureRenderTarget2D>();
     Target->RenderTargetFormat=RTF_RGBA8; Target->ClearColor=FLinearColor(0.025f,0.025f,0.025f);
     Target->InitAutoFormat(1024,1024); Target->UpdateResourceImmediate(true);

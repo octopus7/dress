@@ -10,7 +10,7 @@ bool ApplyTemplate(ULaceGarmentDocument& D,ETemplate Template,const TMap<FString
     if(!D.GarmentId.IsValid() || !D.PatternId.IsValid()) return Fail(TEXT("Template document requires stable garment and pattern identifiers"));
     const bool Shirt=Template==ETemplate::TShirt;
     const FString Name=Shirt?TEXT("OB11 T-Shirt"):TEXT("OB11 Dolphin Shorts");
-    TMap<FString,double> P=Shirt?TMap<FString,double>{{TEXT("sleeveLength"),18},{TEXT("shirtLength"),29},{TEXT("neckWidth"),32},{TEXT("cuffWidth"),24},{TEXT("armholeDepth"),17}}:TMap<FString,double>{{TEXT("shortsLength"),22}};
+    TMap<FString,double> P=Shirt?TMap<FString,double>{{TEXT("sleeveLength"),18},{TEXT("shirtLength"),29},{TEXT("neckWidth"),32},{TEXT("cuffWidth"),24},{TEXT("armholeDepth"),17}}:TMap<FString,double>{{TEXT("shortsLength"),28}};
     // Unspecified fields retain their prior value on updates to this same template.
     if(D.TemplateName==Name)
         for(auto& Pair : P) if(const double* V=D.TemplateParametersMm.Find(Pair.Key)) Pair.Value=*V;
@@ -29,15 +29,21 @@ bool ApplyTemplate(ULaceGarmentDocument& D,ETemplate Template,const TMap<FString
     auto ID=[&](const FString& Role){return FGuid::NewDeterministicGuid(D.PatternId.ToString()+TEXT("/")+Name+TEXT("/")+Role);};
     auto* Draft=NewObject<ULaceGarmentDocument>();
     Draft->GarmentId=D.GarmentId; Draft->PatternId=D.PatternId;
-    Draft->Name=Name; Draft->TemplateName=Name; Draft->TemplateVersion=TEXT("0.3.3-draft"); Draft->TemplateParametersMm=P;
+    Draft->Name=Name; Draft->TemplateName=Name; Draft->TemplateVersion=Shirt?TEXT("0.3.3-draft"):TEXT("0.3.4-draft"); Draft->TemplateParametersMm=P;
     Draft->BoundarySpacingMm=D.BoundarySpacingMm; Draft->MeshMaxEdgeMm=D.MeshMaxEdgeMm;
+    if(!Shirt && D.TemplateName!=Name)
+    {
+        Draft->BoundarySpacingMm=FMath::Min(D.BoundarySpacingMm,1.0);
+        Draft->MeshMaxEdgeMm=FMath::Min(D.MeshMaxEdgeMm,2.0);
+    }
     TArray<int32> Sewn=Shirt?TArray<int32>{1,2,4,5,8,9,11,12}:TArray<int32>{2,4,5,7};
     for(int32 Side=0;Side<2;++Side)
     {
         const FString Role=Side==0?TEXT("front"):TEXT("back"); const double Sign=Side==0?1:-1;
         FLGPiece Piece; Piece.Id=ID(Role); Piece.Name=Side==0?TEXT("Front"):TEXT("Back");
         const double Height=Shirt?95:68;
-        Piece.InitialPlacementCm=FTransform(FRotator(0,Side==0?90:-90,-90),FVector(Side==0?1.8:-1.8,0,(Height-Length)/10));
+        Piece.InitialPlacementCm=FTransform(FRotator(0,Side==0?90:-90,-90),FVector(Sign*(Shirt?1.8:2.0),0,(Height-Length)/10));
+        if(!Shirt) Piece.InitialWrapRadiusCm=2;
         TArray<FVector2d> Boundary;
         if(Shirt)
         {
@@ -48,7 +54,7 @@ bool ApplyTemplate(ULaceGarmentDocument& D,ETemplate Template,const TMap<FString
             const double NeckDepth=4;
             Boundary={{-22,0},{22,0},{18,Length-ArmholeDepth},Under,Over,{20,Length},{NeckHalf,Length},{0,Length-NeckDepth},{-NeckHalf,Length},{-20,Length},{-Over.X,Over.Y},{-Under.X,Under.Y},{-18,Length-ArmholeDepth}};
         }
-        else Boundary={{-22,Length},{0,Length},{22,Length},{24,3},{4,0},{0,Length-FMath::Min(15.0,Length-3)},{-4,0},{-24,3}};
+        else Boundary={{-24,Length},{0,Length},{24,Length},{28,3},{4,0},{0,Length-FMath::Min(21.0,Length-3)},{-4,0},{-28,3}};
         auto AddPoint=[&](const FString& PointRole,FVector2d V)
         {
             FLGControlPoint C; C.Id=ID(Role+TEXT("/")+PointRole); C.PositionMm=FVector2D(Sign*V.X,V.Y); Piece.Points.Add(C); return C.Id;
@@ -73,12 +79,18 @@ bool ApplyTemplate(ULaceGarmentDocument& D,ETemplate Template,const TMap<FString
         }
         else
         {
-            Curve(3,{19,-1},{10,-1}); Curve(6,{-10,-1},{-19,-1});
+            Curve(3,{21,-1},{10,-1}); Curve(6,{-10,-1},{-21,-1});
         }
         FLGAnchor A; A.Id=ID(Role+TEXT("/anchor")); A.Piece=Piece.Id; A.Point=Piece.Points[Shirt?7:1].Id;
         if(Shirt) { A.bUseTarget=true; A.TargetCm=FVector(Side==0?1.05:-1.05,0,9.5); }
         else { A.bUseTarget=true; A.TargetCm=FVector(Side==0?1.1:-1.1,0,6.4); }
         Draft->Anchors.Add(A);
+        if(!Shirt) for(int32 Point : {0,2})
+        {
+            FLGAnchor Waist; Waist.Id=ID(Role+FString::Printf(TEXT("/waist-side-anchor/%d"),Point));
+            Waist.Piece=Piece.Id; Waist.Point=Piece.Points[Point].Id; Waist.bUseTarget=true;
+            Waist.TargetCm=FVector(0,Point==0?-1.75:1.75,6.4); Draft->Anchors.Add(Waist);
+        }
         if(Shirt) for(int32 Point : {6,8})
         {
             FLGAnchor Shoulder; Shoulder.Id=ID(Role+FString::Printf(TEXT("/shoulder-anchor/%d"),Point));
@@ -100,6 +112,7 @@ bool ApplyTemplate(ULaceGarmentDocument& D,ETemplate Template,const TMap<FString
     D.Modify();
     D.Name=Draft->Name; D.TemplateName=Draft->TemplateName; D.TemplateVersion=Draft->TemplateVersion; D.TemplateParametersMm=MoveTemp(Draft->TemplateParametersMm);
     D.Pieces=MoveTemp(Draft->Pieces); D.Seams=MoveTemp(Draft->Seams); D.Anchors=MoveTemp(Draft->Anchors);
+    D.BoundarySpacingMm=Draft->BoundarySpacingMm; D.MeshMaxEdgeMm=Draft->MeshMaxEdgeMm;
     D.InvalidateDerived(); return true;
 }
 }

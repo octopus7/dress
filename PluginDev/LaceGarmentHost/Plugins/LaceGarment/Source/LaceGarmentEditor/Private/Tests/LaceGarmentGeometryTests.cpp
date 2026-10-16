@@ -1,5 +1,6 @@
 #include "LaceGarmentGeometry.h"
 #include "Misc/AutomationTest.h"
+#include <limits>
 
 using namespace LaceGarment;
 namespace
@@ -15,6 +16,32 @@ double Area(const FPanelMesh& Mesh)
     }
     return Sum;
 }
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FLGWrappedPanel, "LaceGarment.Geometry.WrappedPlacement", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FLGWrappedPanel::RunTest(const FString&)
+{
+    FPanel P; P.BoundaryMm={{-20,0},{20,0},{20,30},{-20,30}}; P.MaxEdgeMm=2;
+    P.InitialPlacementCm=FTransform(FRotator(0,90,-90),FVector(2,0,4));
+    FPanelMesh Flat,Wrapped; FString Error;
+    if(!TestTrue(TEXT("Planar fixture"),BuildPanel(P,Flat,Error))) return false;
+    P.InitialWrapRadiusCm=2;
+    if(!TestTrue(TEXT("Cylindrical placement"),BuildPanel(P,Wrapped,Error))) {AddInfo(Error);return false;}
+    TestTrue(TEXT("Wrapping preserves every rest vertex and face"),Flat.RestMm==Wrapped.RestMm && Flat.Triangles==Wrapped.Triangles);
+    for(int32 I=0;I<Wrapped.RestMm.Num();++I)
+    {
+        const auto R=Wrapped.RestMm[I]; const auto V=Wrapped.InitialCm[I];
+        TestTrue(TEXT("Wrapped vertices lie on the requested cylinder"),FMath::IsNearlyEqual(V.X*V.X+V.Y*V.Y,4.0,1.e-8));
+        TestTrue(TEXT("Vertical position unchanged"),FMath::IsNearlyEqual(V.Z,4+R.Y/10,1.e-8));
+        TestTrue(TEXT("Horizontal rest length equals cylinder arc coordinate"),FMath::IsNearlyEqual(2*FMath::Atan2(V.Y,V.X),R.X/10,1.e-8));
+    }
+    for(double Invalid : {-1.0,.5,std::numeric_limits<double>::infinity(),std::numeric_limits<double>::quiet_NaN()})
+    {
+        P.InitialWrapRadiusCm=Invalid; const auto Before=Wrapped.InitialCm;
+        TestFalse(TEXT("Invalid or overlapping wrap rejected"),BuildPanel(P,Wrapped,Error));
+        TestTrue(TEXT("Failed wrap preserves previous output"),Wrapped.InitialCm==Before);
+    }
+    return true;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FLGPanelDimensions, "LaceGarment.Geometry.DimensionsAndRefinement", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)

@@ -61,6 +61,7 @@ struct FLGPiece
     UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="LaceGarment") FVector2D Grain=FVector2D(0,1);
     UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="LaceGarment") FGuid MirrorOf;
     UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="LaceGarment") FTransform InitialPlacementCm=FTransform::Identity;
+    UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="LaceGarment") double InitialWrapRadiusCm=0;
 };
 USTRUCT(BlueprintType)
 struct FLGEdgeInterval

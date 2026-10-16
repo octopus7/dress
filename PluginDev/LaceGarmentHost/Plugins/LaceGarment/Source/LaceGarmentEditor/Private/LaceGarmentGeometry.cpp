@@ -33,6 +33,8 @@ bool BuildPanel(const FPanel& Panel, FPanelMesh& Out, FString& Error)
         return Fail(TEXT("Initial placement must be finite, normalized, and have unit scale"));
     if (Panel.InitialPlacementCm.GetTranslation().GetAbsMax()>10000)
         return Fail(TEXT("Initial placement exceeds the supported 10000 cm coordinate range"));
+    if(!FMath::IsFinite(Panel.InitialWrapRadiusCm) || Panel.InitialWrapRadiusCm<0 || Panel.InitialWrapRadiusCm>10000)
+        return Fail(TEXT("Initial wrap radius must be finite and between 0 and 10000 cm"));
     TArray<int32> Starts=Panel.LoopStarts.IsEmpty()?TArray<int32>{0}:Panel.LoopStarts;
     if(Starts.Num()>33 || Starts[0]!=0) return Fail(TEXT("Invalid boundary loop offsets"));
     TArray<int32> Next; Next.SetNum(N);
@@ -102,6 +104,9 @@ bool BuildPanel(const FPanel& Panel, FPanelMesh& Out, FString& Error)
     // Interior samples prevent long skinny fans from a densely sampled curve.
     // Constraint edges preserve every original boundary ID, including collinear samples.
     FBox2d Bounds(ForceInit); for(auto P : Panel.BoundaryMm) Bounds+=P;
+    const double WrapCenterX=Bounds.GetCenter().X/10;
+    if(Panel.InitialWrapRadiusCm>0 && Bounds.GetSize().X/(20*Panel.InitialWrapRadiusCm)>=UE_PI*.5)
+        return Fail(TEXT("Initial wrap exceeds a half cylinder; increase the radius"));
     const double Spacing=Panel.MaxEdgeMm*0.6;
     const double NX=FMath::CeilToDouble(Bounds.GetSize().X/Spacing), NY=FMath::CeilToDouble(Bounds.GetSize().Y/Spacing);
     if(NX*NY>262144) return Fail(TEXT("Panel sampling exceeds the supported work budget; increase edge spacing"));
@@ -213,7 +218,14 @@ bool BuildPanel(const FPanel& Panel, FPanelMesh& Out, FString& Error)
         return Fail(TEXT("Triangulation does not preserve panel area"));
     for (auto P : Result.RestMm)
     {
-        const FVector3d Placed=Panel.InitialPlacementCm.TransformPosition(FVector(P.X/10,P.Y/10,0));
+        FVector3d Local(P.X/10,P.Y/10,0);
+        if(Panel.InitialWrapRadiusCm>0)
+        {
+            const double Angle=(Local.X-WrapCenterX)/Panel.InitialWrapRadiusCm;
+            Local.X=WrapCenterX+Panel.InitialWrapRadiusCm*FMath::Sin(Angle);
+            Local.Z=Panel.InitialWrapRadiusCm*(FMath::Cos(Angle)-1);
+        }
+        const FVector3d Placed=Panel.InitialPlacementCm.TransformPosition(Local);
         if (Placed.ContainsNaN() || Placed.GetAbsMax()>10000)
             return Fail(TEXT("Placed panel exceeds the supported 10000 cm coordinate range"));
         Result.InitialCm.Add(Placed);

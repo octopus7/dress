@@ -6,9 +6,31 @@
 #include "Materials/Material.h"
 #include "Engine/SkeletalMesh.h"
 #include "LaceGarmentCollisionProjection.h"
+#include "LaceGarmentBending.h"
+#include "Chaos/PBDBendingConstraintsBase.h"
 #include <limits>
 
 using namespace LaceGarment;
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FLGDihedralPrecision, "LaceGarment.Pipeline.DihedralPrecision", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FLGDihedralPrecision::RunTest(const FString&)
+{
+    TStaticArray<FVector3d,4> P={FVector3d(1.2,-1.1,6.4),FVector3d(1.3,-1.1,6.4),FVector3d(1.23,-1.092,6.4),FVector3d(1.27,-1.11,6.406)};
+    const auto Sample=EvaluateDihedral(P[0],P[1],P[2],P[3]);
+    const double NativeAngle=Chaos::Softs::FPBDBendingConstraintsBase::CalcAngle(Chaos::FSolverVec3(P[0]),Chaos::FSolverVec3(P[1]),Chaos::FSolverVec3(P[2]),Chaos::FSolverVec3(P[3]));
+    TestTrue(TEXT("Signed angle convention agrees with Chaos"),FMath::Abs(Sample.Angle-NativeAngle)<2.e-5);
+    constexpr double H=1.e-7;
+    for(int32 V=0;V<4;++V) for(int32 Axis=0;Axis<3;++Axis)
+    {
+        auto Plus=P,Minus=P; Plus[V][Axis]+=H; Minus[V][Axis]-=H;
+        const double Numerical=(EvaluateDihedral(Plus[0],Plus[1],Plus[2],Plus[3]).Angle-EvaluateDihedral(Minus[0],Minus[1],Minus[2],Minus[3]).Angle)/(2*H);
+        TestTrue(FString::Printf(TEXT("Small-triangle derivative %d/%d matches independent central difference"),V,Axis),FMath::Abs(Numerical-Sample.Gradient[V][Axis])<1.e-5);
+    }
+    auto Shifted=P; for(auto& V : Shifted) V+=FVector3d(1000,-500,800);
+    const auto Moved=EvaluateDihedral(Shifted[0],Shifted[1],Shifted[2],Shifted[3]);
+    TestTrue(TEXT("Angle retains translation invariance for small triangles"),FMath::Abs(Moved.Angle-Sample.Angle)<1.e-10);
+    for(int32 V=0;V<4;++V) TestTrue(TEXT("Derivative retains translation invariance"),Moved.Gradient[V].Equals(Sample.Gradient[V],1.e-7));
+    return true;
+}
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FLGCollisionSweep, "LaceGarment.Pipeline.PreventBodyTunneling", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 bool FLGCollisionSweep::RunTest(const FString&)
 {
@@ -79,12 +101,60 @@ bool FLGBendingControl::RunTest(const FString&)
     TestTrue(TEXT("Zero regularization remains a valid flat seam solve"),BuildGarment(Input,Result,Error));
     // A short partial close distinguishes the regularizer's effect without
     // treating either transient state as an accepted garment.
+    Input.Panels[1].InitialPlacementCm.SetRotation(FQuat(FVector::XAxisVector,.6));
     Input.MaxSteps=1;FBuildResult Free,Regularized;
     BuildGarment(Input,Free,Error);Input.BendingStrength=.05;BuildGarment(Input,Regularized,Error);
     double Difference=0;
     if(TestEqual(TEXT("Comparison topology unchanged"),Free.SettledCm.Num(),Regularized.SettledCm.Num()))
         for(int32 I=0;I<Free.SettledCm.Num();++I) Difference=FMath::Max(Difference,(Free.SettledCm[I]-Regularized.SettledCm[I]).Length());
     TestTrue(TEXT("Regularization setting affects the solve"),Difference>1.e-7);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FLGSewnJunction, "LaceGarment.Pipeline.SewnJunction", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FLGSewnJunction::RunTest(const FString&)
+{
+    FBuildInput Input;
+    FPanel A; A.BoundaryMm={{0,0},{20,0},{20,20},{0,20}}; A.MaxEdgeMm=5;
+    A.InitialPlacementCm.SetTranslation(FVector(-2,0,8));
+    FPanel B=A,C=A; B.InitialPlacementCm.SetTranslation(FVector(0,0,8)); C.InitialPlacementCm.SetTranslation(FVector(0,2,8));
+    Input.Panels={A,B,C}; Input.Seams={{0,1,1,3,true},{1,2,2,0,true}};
+    Input.Pins={{0,0},{2,2}}; Input.Iterations=1; Input.MaxSteps=120;
+    FBuildResult Result; FString Error;
+    BuildGarment(Input,Result,Error);
+    TestEqual(TEXT("All requested transient steps executed"),Result.Steps,120);
+    TestTrue(TEXT("Three-panel junction remains welded under load with one iteration"),Result.MaxSeamGapCm<1.e-12);
+    const auto X=Result.SettledCm[2], Y=Result.SettledCm[Result.Offsets[1]+3], Z=Result.SettledCm[Result.Offsets[2]];
+    TestTrue(TEXT("Transitive corner shares one position"),X.Equals(Y,1.e-12) && Y.Equals(Z,1.e-12));
+    // Contradictory guides must fail before stepping, even when connected
+    // through a third panel rather than directly by one stitch.
+    Input.Pins={{0,2,FVector3d(0,2,8)},{2,0,FVector3d(0,2,9)}};
+    TestFalse(TEXT("Conflicting sewn-junction guides rejected"),BuildGarment(Input,Result,Error));
+    TestEqual(TEXT("No fitting attempted for conflicting guides"),Result.Steps,0);
+    TestTrue(TEXT("Actionable junction conflict"),Error.Contains(TEXT("sewn junction")));
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FLGBoundedEase, "LaceGarment.Pipeline.BoundedEase", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FLGBoundedEase::RunTest(const FString&)
+{
+    FBuildInput Input; FPanel Panel;
+    Panel.BoundaryMm={{0,0},{20,0},{20,30},{0,30}}; Panel.MaxEdgeMm=2;
+    Input.Panels={Panel}; Input.GravityCm=0;
+    Input.Pins={{0,0,FVector3d(0,0,0)},{0,1,FVector3d(2.1,0,0)},
+        {0,2,FVector3d(2.1,3,0)},{0,3,FVector3d(0,3,0)}};
+    FBuildResult Result; FString Error;
+    if(!TestTrue(TEXT("Five-percent guided ease converges"),BuildGarment(Input,Result,Error))) { AddInfo(Error); return false; }
+    TestTrue(TEXT("Ease stays below unchanged strain limit"),Result.MaxRelativeEdgeError<.1);
+    TestEqual(TEXT("Original rest boundary preserved"),Result.Panels[0].RestMm[1],FVector2d(20,0));
+    TestTrue(TEXT("Target anchor preserved"),Result.SettledCm[1].Equals(FVector3d(2.1,0,0),1.e-10));
+    // The allowance cannot legitimize a pattern whose required span exceeds
+    // the acceptance limit, or rewrite its 2D source to match the target.
+    Input.Pins[1].TargetCm=FVector3d(2.6,0,0); Input.Pins[2].TargetCm=FVector3d(2.6,3,0); Input.MaxSteps=180;
+    TestFalse(TEXT("Thirty-percent forced stretch remains rejected"),BuildGarment(Input,Result,Error));
+    TestFalse(TEXT("Rejected fit never marked converged"),Result.bConverged);
+    TestTrue(TEXT("Original excess stretch remains measured"),Result.MaxRelativeEdgeError>.1);
+    TestTrue(TEXT("Coupled refinement cannot bypass excess-strain rejection"),Result.RefinementSteps>0);
     return true;
 }
 
@@ -128,6 +198,23 @@ bool FLGClothCollection::RunTest(const FString&)
     TestTrue(TEXT("Actual cloth stitch topology merged"),Cloth.GetNumSimVertices3D()<Cloth.GetNumSimVertices2D());
     TestEqual(TEXT("Render preserves UV seams"),Cloth.GetNumRenderVertices(),Result.UV.Num());
     for(int32 I=0; I<Result.UV.Num(); ++I) TestEqual(TEXT("Explicit atlas replaces default projection"),Cloth.GetRenderUVs()[I][0],Result.UV[I]);
+    const auto Map=Cloth.GetWeightMap(TEXT("MaxDistance"));
+    const auto Ends=Cloth.GetTetherKinematicIndex();
+    const auto Lengths=Cloth.GetTetherReferenceLength();
+    int32 Missing=0,Invalid=0;
+    for(int32 I=0;I<Cloth.GetNumSimVertices3D();++I)
+    {
+        if(Map[I]>0 && Ends[I].IsEmpty()) ++Missing;
+        if(Ends[I].Num()!=Lengths[I].Num()) { ++Invalid; continue; }
+        for(int32 K=0;K<Ends[I].Num();++K)
+        {
+            const int32 Anchor=Ends[I][K];
+            if(!Map.IsValidIndex(Anchor) || Map[Anchor]!=0 || !FMath::IsFinite(Lengths[I][K]) || Lengths[I][K]<=0) { ++Invalid; continue; }
+            if(Lengths[I][K]+1.e-5f<(Cloth.GetSimPosition3D()[I]-Cloth.GetSimPosition3D()[Anchor]).Length()) ++Invalid;
+        }
+    }
+    TestEqual(TEXT("Connected dynamic vertices have native long-range attachment data"),Missing,0);
+    TestEqual(TEXT("Tethers terminate on fixed vertices with valid geodesic lengths"),Invalid,0);
     return true;
 }
 
@@ -188,6 +275,32 @@ bool FLGCapsuleDrape::RunTest(const FString&)
     TestTrue(TEXT("Capsule fixture does not collapse into near-reversed adjacent faces"),MaxFoldDegrees<120);
     Input.Panels[0].InitialPlacementCm.SetTranslation(FVector(0,-2,7));
     TestFalse(TEXT("Body-penetrating initial placement blocked"),BuildGarment(Input,Result,Error));
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FLGCoarseSurfaceDrape, "LaceGarment.Pipeline.CoarseSurfaceContact", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FLGCoarseSurfaceDrape::RunTest(const FString&)
+{
+    FBuildInput Input;
+    FPanel Front;
+    Front.BoundaryMm={{0,0},{40,0},{40,30},{20,32},{0,30}};
+    Front.MaxEdgeMm=10;
+    Front.InitialPlacementCm=FTransform(FRotator(0,90,-90),FVector(1.2,-2,7));
+    FPanel Back=Front;
+    Back.InitialPlacementCm=FTransform(FRotator(0,-90,-90),FVector(-1.2,2,7));
+    Input.Panels={Front,Back}; Input.Seams={{0,1,1,4,true},{0,4,1,1,true}};
+    Input.Pins={{0,3},{1,3}};
+    Input.Colliders.Add({FVector3d(0,0,6.5),FVector3d(0,0,10.5),1.0});
+    FBuildResult Result; FString Error;
+    Input.MaxSteps=120;
+    BuildGarment(Input,Result,Error);
+    AddInfo(FString::Printf(TEXT("coarse sewing phase: face=%.6f edge=%.6f"),Result.MaxFacePenetrationCm,Result.MaxRelativeEdgeError));
+    TestTrue(TEXT("Sewing preserves triangle clearance before global refinement"),Result.bSurfaceMeasured && Result.MaxFacePenetrationCm<.005);
+    Input.MaxSteps=480;
+    const bool Fitted=BuildGarment(Input,Result,Error);
+    AddInfo(FString::Printf(TEXT("coarse drape: %s; steps=%d face=%.6f edge=%.6f speed=%.6f"),*Error,Result.Steps,Result.MaxFacePenetrationCm,Result.MaxRelativeEdgeError,Result.MaxSpeedCmPerSec));
+    TestTrue(TEXT("Coarse faces settle outside the body, not merely their vertices"),Fitted);
+    TestTrue(TEXT("Triangle interiors clear the cylinder"),Result.bSurfaceMeasured && Result.MaxFacePenetrationCm<.005);
     return true;
 }
 

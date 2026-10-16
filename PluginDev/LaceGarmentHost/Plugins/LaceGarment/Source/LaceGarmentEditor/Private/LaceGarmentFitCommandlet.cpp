@@ -51,8 +51,16 @@ int32 ULaceGarmentFitCommandlet::Main(const FString& Params)
     FParse::Value(*Params,TEXT("GravityCm="),Sampled.Input.GravityCm);
     FParse::Value(*Params,TEXT("BendingStrength="),Sampled.Input.BendingStrength);
     FParse::Value(*Params,TEXT("Iterations="),Sampled.Input.Iterations);
+    FParse::Value(*Params,TEXT("LinearIterations="),Sampled.Input.LinearIterations);
+    FParse::Value(*Params,TEXT("RefinementIterations="),Sampled.Input.RefinementIterations);
+    if(FParse::Param(*Params,TEXT("IterativeOnly"))) Sampled.Input.bDirectLinearSolve=false;
+    if(FParse::Param(*Params,TEXT("DirectSolve")))
+    {
+        if(FParse::Param(*Params,TEXT("IterativeOnly"))) return 2;
+        Sampled.Input.bDirectLinearSolve=true;
+    }
     Sampled.Input.Progress=[](const FBuildResult& B)
-    {UE_LOG(LogTemp,Display,TEXT("Fit progress: %d steps, seam %.5fcm, edge %.5f, penetration %.5fcm, speed %.5fcm/s"),B.Steps,B.MaxSeamGapCm,B.MaxRelativeEdgeError,B.MaxPenetrationCm,B.MaxSpeedCmPerSec);};
+    {UE_LOG(LogTemp,Display,TEXT("Fit progress: %d steps, seam %.5fcm, edge %.5f, penetration %.5fcm, speed %.5fcm/s, last correction %.8fcm, linear residual %.5g"),B.Steps,B.MaxSeamGapCm,B.MaxRelativeEdgeError,B.MaxPenetrationCm,B.MaxSpeedCmPerSec,B.LastRefinementCorrectionCm,B.LastLinearRelativeResidual);};
     FBuildResult Build;
     const bool Fitted=BuildGarment(Sampled.Input,Build,Error);
     const FString FitError=Error;
@@ -63,10 +71,27 @@ int32 ULaceGarmentFitCommandlet::Main(const FString& Params)
     Report->SetStringField(TEXT("generatorVersion"),GeneratorVersion);
     Report->SetBoolField(TEXT("fitted"),Fitted); Report->SetStringField(TEXT("error"),FitError);
     Report->SetNumberField(TEXT("steps"),Build.Steps); Report->SetNumberField(TEXT("vertices"),Build.InitialCm.Num());
+    Report->SetNumberField(TEXT("coupledRefinementSteps"),Build.RefinementSteps);
+    Report->SetNumberField(TEXT("lastNonlinearIterations"),Build.LastNonlinearIterations);
+    Report->SetNumberField(TEXT("timeStepSeconds"),Sampled.Input.TimeStep);
+    Report->SetNumberField(TEXT("lastRefinementCorrectionCm"),Build.LastRefinementCorrectionCm);
+    Report->SetNumberField(TEXT("lastLinearRelativeResidual"),Build.LastLinearRelativeResidual);
+    Report->SetNumberField(TEXT("directLinearSolves"),Build.DirectLinearSolves);
+    Report->SetNumberField(TEXT("iterativeLinearSolves"),Build.IterativeLinearSolves);
+    Report->SetBoolField(TEXT("directLinearSolveEnabled"),Sampled.Input.bDirectLinearSolve);
+    Report->SetNumberField(TEXT("refinementSeconds"),Build.RefinementSeconds);
+    Report->SetNumberField(TEXT("linearSolveSeconds"),Build.LinearSolveSeconds);
+    Report->SetNumberField(TEXT("collisionSweepSeconds"),Build.CollisionSweepSeconds);
+    Report->SetNumberField(TEXT("energyEvaluationSeconds"),Build.EnergyEvaluationSeconds);
+    Report->SetNumberField(TEXT("refinementIterationsTotal"),Build.RefinementIterationsTotal);
+    Report->SetNumberField(TEXT("lineSearchTrials"),Build.LineSearchTrials);
+    Report->SetStringField(TEXT("bendingModel"),TEXT("doubleDihedralChaosConvention"));
     Report->SetNumberField(TEXT("maxSteps"),Sampled.Input.MaxSteps);
     Report->SetNumberField(TEXT("diagnosticGravityCmPerSecSquared"),Sampled.Input.GravityCm);
     Report->SetNumberField(TEXT("diagnosticBendingStrengthPerIteration"),Sampled.Input.BendingStrength);
     Report->SetNumberField(TEXT("iterationsPerStep"),Sampled.Input.Iterations);
+    Report->SetNumberField(TEXT("linearIterations"),Sampled.Input.LinearIterations);
+    Report->SetNumberField(TEXT("refinementIterations"),Sampled.Input.RefinementIterations);
     Report->SetNumberField(TEXT("maxSeamGapCm"),Build.MaxSeamGapCm); Report->SetNumberField(TEXT("maxRelativeEdgeError"),Build.MaxRelativeEdgeError);
     Report->SetBoolField(TEXT("surfaceMeasured"),Build.bSurfaceMeasured);
     Report->SetNumberField(TEXT("maxVertexPenetrationCm"),Build.MaxPenetrationCm);
@@ -103,9 +128,10 @@ int32 ULaceGarmentFitCommandlet::Main(const FString& Params)
     }
     Report->SetNumberField(TEXT("initialVertexPenetrationCm"),InitialPenetration);
     auto Geometry=MakeShared<FJsonObject>();
-    TArray<TSharedPtr<FJsonValue>> Initial,Settled,Panels;
+    TArray<TSharedPtr<FJsonValue>> Initial,Settled,Panels,Displacements;
     for(auto P : Build.InitialCm) Initial.Add(MakeShared<FJsonValueArray>(Numbers(P)));
     for(auto P : Build.SettledCm) Settled.Add(MakeShared<FJsonValueArray>(Numbers(P)));
+    for(auto P : Build.LastStepDisplacementCm) Displacements.Add(MakeShared<FJsonValueArray>(Numbers(P)));
     for(int32 I=0;I<Build.Panels.Num();++I)
     {
         auto Panel=MakeShared<FJsonObject>(); TArray<TSharedPtr<FJsonValue>> Rest,Faces;
@@ -115,6 +141,7 @@ int32 ULaceGarmentFitCommandlet::Main(const FString& Params)
         Panels.Add(MakeShared<FJsonValueObject>(Panel));
     }
     Geometry->SetArrayField(TEXT("initialCm"),Initial); Geometry->SetArrayField(TEXT("settledCm"),Settled); Geometry->SetArrayField(TEXT("panels"),Panels);
+    Geometry->SetArrayField(TEXT("lastStepDisplacementCm"),Displacements);
     FString GeometryJson; FJsonSerializer::Serialize(Geometry,TJsonWriterFactory<>::Create(&GeometryJson));
     FFileHelper::SaveStringToFile(GeometryJson,*(Directory/TEXT("geometry.json")));
     bool Rendered=false;

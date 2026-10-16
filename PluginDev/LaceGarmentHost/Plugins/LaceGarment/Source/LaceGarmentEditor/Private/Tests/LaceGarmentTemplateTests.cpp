@@ -64,8 +64,8 @@ bool FLGTShirtTemplate::RunTest(const FString&)
     for(const auto& Pin : S.Input.Pins)
     {
         const auto& Panel=S.Input.Panels[Pin.Panel];
-        const auto UV=Panel.BoundaryMm[Pin.BoundaryPoint];
-        const FVector3d Start=Panel.InitialPlacementCm.TransformPosition(FVector(UV.X/10,UV.Y/10,0));
+        FPanelMesh GuideMesh; if(!TestTrue(TEXT("Build actual guide placement"),BuildPanel(Panel,GuideMesh,Error))) return false;
+        const FVector3d Start=GuideMesh.InitialCm[Pin.BoundaryPoint];
         for(int32 Step=0;Step<=60;++Step)
         {
             const auto Position=FMath::Lerp(Start,Pin.TargetCm.Get(Start),Step/60.0);
@@ -151,8 +151,9 @@ bool FLGShortsAnchorLength::RunTest(const FString&)
     if(!TestTrue(TEXT("Read actual body for waist guide paths"),ReadBodyCollision(LoadObject<USkeletalMesh>(nullptr,TEXT("/LaceGarment/Authoring/Body/SK_OB11.SK_OB11")),Capsules,Convexes,Error))) return false;
     for(const auto& Pin : Source.Input.Pins)
     {
-        const auto& Panel=Source.Input.Panels[Pin.Panel];const auto UV=Panel.BoundaryMm[Pin.BoundaryPoint];
-        const FVector3d Start=Panel.InitialPlacementCm.TransformPosition(FVector(UV.X/10,UV.Y/10,0));
+        const auto& Panel=Source.Input.Panels[Pin.Panel];
+        FPanelMesh GuideMesh; if(!TestTrue(TEXT("Build actual wrapped waist placement"),BuildPanel(Panel,GuideMesh,Error))) return false;
+        const FVector3d Start=GuideMesh.InitialCm[Pin.BoundaryPoint];
         for(int32 Step=0;Step<=60;++Step)
         {
             const auto P=FMath::Lerp(Start,Pin.TargetCm.Get(Start),Step/60.0);double Distance=DBL_MAX;

@@ -3,12 +3,15 @@
 
 namespace LaceGarment
 {
-inline constexpr const TCHAR* GeneratorVersion=TEXT("0.3.4-cooked-convex");
+inline constexpr const TCHAR* GeneratorVersion=TEXT("0.3.14-surface-sweep");
 struct FPanel
 {
     FGuid Id;
     TArray<FVector2d> BoundaryMm;
     FTransform InitialPlacementCm = FTransform::Identity;
+    // Optional cylindrical initial placement about local Y; zero keeps a plane.
+    // The 2D rest metric is unchanged. Applied before InitialPlacementCm.
+    double InitialWrapRadiusCm = 0;
     double MaxEdgeMm = 3.0;
     // Empty means one outer loop. Otherwise first index is 0; remaining loops are holes.
     TArray<int32> LoopStarts;

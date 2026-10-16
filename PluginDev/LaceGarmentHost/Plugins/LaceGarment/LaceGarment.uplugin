@@ -1,7 +1,7 @@
 {
   "FileVersion": 3,
-  "Version": 4,
-  "VersionName": "0.3.4-dev",
+  "Version": 14,
+  "VersionName": "0.3.14-dev",
   "FriendlyName": "LaceGarment",
   "Description": "UE native garment authoring. Development build; acceptance gates pending.",
   "Category": "Content Creation",

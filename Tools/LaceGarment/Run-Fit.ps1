@@ -6,10 +6,15 @@ param(
     [ValidateRange(-2000,2000)][double]$GravityCm=-980,
     [ValidateRange(0,1)][double]$BendingStrength=0.05,
     [ValidateRange(1,200)][int]$Iterations=100,
+    [ValidateRange(1,1000)][int]$LinearIterations=200,
+    [ValidateRange(1,128)][int]$RefinementIterations=32,
     [string]$SourceDraft,
-    [switch]$Render
+    [switch]$Render,
+    [switch]$IterativeOnly,
+    [switch]$DirectSolve
 )
 $ErrorActionPreference='Stop'
+if($IterativeOnly -and $DirectSolve){throw 'Choose one linear solver mode'}
 $RepoRoot=Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $HostRoot=Join-Path $RepoRoot 'PluginDev/LaceGarmentHost'
 if($RunName -notmatch '^[a-zA-Z0-9_-]+$'){throw 'Invalid run name'}
@@ -19,6 +24,9 @@ New-Item -ItemType Directory -Path $Report | Out-Null
 $GravityArgument=$GravityCm.ToString([Globalization.CultureInfo]::InvariantCulture)
 $BendingArgument=$BendingStrength.ToString([Globalization.CultureInfo]::InvariantCulture)
 $Arguments=@((Join-Path $HostRoot 'LaceGarmentHost.uproject'),'-run=LaceGarmentFit',"-Template=$Template","-MaxSteps=$MaxSteps","-GravityCm=$GravityArgument","-BendingStrength=$BendingArgument","-Iterations=$Iterations",'-unattended','-nosplash','-nosound',"-ReportDir=$Report","-abslog=$Report/Editor.log")
+$Arguments+=@("-LinearIterations=$LinearIterations","-RefinementIterations=$RefinementIterations")
+if($IterativeOnly){$Arguments+='-IterativeOnly'}
+if($DirectSolve){$Arguments+='-DirectSolve'}
 if($SourceDraft){$Arguments+="-SourceDraft=$((Resolve-Path -LiteralPath $SourceDraft -ErrorAction Stop).Path)"}
 if($Render){$Arguments+=@('-Render','-AllowCommandletRendering','-RenderOffscreen')}else{$Arguments+='-nullrhi'}
 & (Join-Path $EngineRoot 'Engine/Binaries/Win64/UnrealEditor-Cmd.exe') @Arguments *> (Join-Path $Report 'Console.log')
