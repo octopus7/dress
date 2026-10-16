@@ -7,7 +7,7 @@ public class GarmentFitClothProbe : ModuleRules
         PrivateDependencyModuleNames.AddRange(new[] {
             "Core", "CoreUObject", "Engine", "UnrealEd", "Chaos", "ChaosCloth",
             "ChaosClothAsset", "ChaosClothAssetEngine", "ClothingSystemRuntimeCommon",
-            "PhysicsCore", "RenderCore", "RHI", "Json", "JsonUtilities", "AssetRegistry"
+            "PhysicsCore", "RenderCore", "RHI", "Json", "JsonUtilities", "AssetRegistry", "AssetTools"
         });
     }
 }

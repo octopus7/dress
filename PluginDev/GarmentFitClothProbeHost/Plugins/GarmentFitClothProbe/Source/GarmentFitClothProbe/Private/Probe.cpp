@@ -1,4 +1,5 @@
 #include "Probe.h"
+#include "ProbeSupport.h"
 #include "ChaosClothAsset/ClothAsset.h"
 #include "ChaosClothAsset/ClothComponent.h"
 #include "ChaosClothAsset/ClothSimulationProxy.h"
@@ -188,6 +189,7 @@ static TArray<TSharedPtr<FJsonValue>> JsonPositions(TConstArrayView<FVector3f> P
 static bool Capture(FPreviewScene& Scene, UChaosClothComponent* Component, const FCollectionClothConstFacade& Cloth,
     TConstArrayView<FVector3f> Positions, bool bSphere, const FString& File, FString& Error, bool bBackView = false)
 {
+    if (!Support::EnsureClothRenderReady(Component, Error)) return false;
     // The cloth surface is rendered by the actual UChaosClothComponent; thin debug lines
     // overlay the measured native sim topology. No substitute mesh or UI widget tree.
     FlushPersistentDebugLines(Scene.GetWorld());
