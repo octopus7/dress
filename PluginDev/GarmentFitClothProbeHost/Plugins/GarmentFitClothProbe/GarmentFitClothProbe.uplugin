@@ -1,0 +1,10 @@
+{
+  "FileVersion": 3,
+  "Version": 1,
+  "VersionName": "0.1",
+  "FriendlyName": "Garment Fit Cloth Probe",
+  "Description": "Isolated two-panel Chaos Cloth technical experiment for REQ-024.",
+  "CanContainContent": true,
+  "Modules": [{ "Name": "GarmentFitClothProbe", "Type": "Editor", "LoadingPhase": "Default" }],
+  "Plugins": [{ "Name": "ChaosClothAsset", "Enabled": true }, { "Name": "ChaosCloth", "Enabled": true }]
+}

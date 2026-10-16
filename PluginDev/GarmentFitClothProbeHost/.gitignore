@@ -1,0 +1,9 @@
+/Binaries/
+/Intermediate/
+/Saved/
+/DerivedDataCache/
+/Plugins/*/Binaries/
+/Plugins/*/Intermediate/
+/.vs/
+# Engine editor startup writes default input settings; this probe has no input/UI.
+/Config/DefaultInput.ini
