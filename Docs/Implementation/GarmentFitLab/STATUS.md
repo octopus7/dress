@@ -1,8 +1,24 @@
 # GarmentFitLab 구현 기록
 
-근거: REQ-021~023, [설계](../../Design/GARMENT_FIT_LAB_DESIGN.md), [계획](../../Plans/2026-10-17-garment-fit-lab.md).
+근거: REQ-021~023, REQ-025, [설계](../../Design/GARMENT_FIT_LAB_DESIGN.md), [계획](../../Plans/2026-10-17-garment-fit-lab.md).
 
-## 현재 — 단계 1 구현·검증 완료, 사용자 결과 확인 대기 (2026-10-17)
+## 현재 — REQ-025 소매 흔적을 정리한 마네킹 입력 (2026-10-17)
+
+`/Game/Maps/L_GarmentFitLab`의 입력을 **SKM_LunaMk2_Mannequin**으로 교체했다. 기존 Mk2 메시·스켈레톤·무광 재질과 외부 제공 원본은 보존했다. 단계 1의 입력 개선만 수행했으며 단계 2는 시작하지 않았다.
+
+- 별도로 연결된 옷깃·패드·가슴 장식 8개 표면과 원본의 미사용 정점을 제거했다. 몸과 연결된 소매는 단순 삭제하지 않고 어깨–팔꿈치 뼈 위치를 기준으로 팽창된 표면과 소매 끝단을 정리했다.
+- 연결된 마네킹 표면을 만들고 어깨·팔·몸통의 경계와 표면을 매끈하게 다듬었다. 원본 가짜 머리, 기준 포즈, 손·다리 및 발의 기본 형상은 유지했다. 의상 아래 실제 피부를 복원했다고 가정하지 않는 저작 파생본이다.
+- 출력: **37,507정점 / 75,010삼각형**, 열린/비다양체 모서리 0, 퇴화 면 0, 골격 가중치 누락 정점 0. 소매 흔적을 제거하기 위한 표면 재구성으로 원본 토폴로지와 UV는 유지하지 않는다.
+- 실제 UE 크기: 높이 **135.635cm**, 좌우 폭 **57.254cm**, 앞뒤 깊이 **22.106cm**. 기존 스켈레톤을 공유하며 131개 뼈의 이름·부모·기준 포즈가 최초 입력과 일치한다. 애니메이션 변형 품질은 이번 범위에 포함하지 않는다.
+- 기존 `M_LunaMk2_Matte`를 그대로 사용했다. 텍스처는 없다. 파생 `.blend`에도 메시 1개와 armature 1개만 저장했으며 image/material 데이터블록은 0개다. UE 임포트에서 UV가 없어 기본 UV를 생성했다는 경고 1건이 있었으며 단색 재질 표시에 영향은 없다.
+- 편집 원본: `Content/GarmentFitLab/Source/SKM_LunaMk2_Mannequin.blend`, 교환 원본: 같은 폴더의 `.fbx`. UE 애셋: `Content/GarmentFitLab/Characters/LunaMk2/SKM_LunaMk2_Mannequin.uasset`.
+- 재현 스크립트: `Plugins/GarmentFitLab/Content/Python/create_luna_mannequin.py` (제공 원본을 별도 Blender 프로세스로 열어 파생본 저작), `import_luna_mannequin.py` (신규 애셋 임포트와 전용 레벨 지정). 이미 존재하는 파생 애셋은 자동 덮어쓰지 않는다.
+- UE 5.8.3 Editor 빌드 성공: `Saved/GarmentFitLab/build-mannequin.log`.
+- **GarmentFitLab.Input 4개 + LaceLoft 16개 = 20/20 성공**. `failed=0`, `notRun=0`, 예상 누락 경로 경고 1건. 결과: `Saved/GarmentFitLab/mannequin-report/index.json`. 기존 입력 보존, 파생본 재열기, 골격·기준 포즈 유지, 재질, 실제 렌더 표면과 레벨 지정 검증을 포함한다.
+- Blender 저장본 재열기에서 모서리·면·가중치·텍스처 부재를 재확인했다: `Saved/GarmentFitLab/mannequin-source-reopen.log`. 정면·측면·후면 저작 검토 이미지: `mannequin-derived-{front,side,back}.png`.
+- 실제 UE Editor에서 저장된 레벨을 재열어 정면·측면·후면의 소매 제거와 어깨–팔 연결을 확인했다: `Saved/GarmentFitLab/mannequin-{front,side,back}.png`.
+
+## 단계 1 최초 Mk2 입력 — 이전 확인 결과 (2026-10-17)
 
 `/Game/Maps/L_GarmentFitLab`을 열고 Play하면 사용자가 제공한 **SKM_LunaMk2**가 기준 포즈로 표시된다. 입력 메시, 골격, 새 재질은 `/Game/GarmentFitLab/`에만 저장했다. 단계 2는 시작하지 않는다.
 

@@ -129,8 +129,8 @@ bool FGarmentFitSavedAssetsTest::RunTest(const FString& Parameters)
                 ++PreviewCount;
                 USkeletalMesh* Character = Cast<USkeletalMesh>(SavedPreview->InputMesh.LoadSynchronous());
                 TestNotNull(TEXT("Supplied Mk2 input reopens as a skeletal mesh"), Character);
-                TestEqual(TEXT("Only the supplied Mk2 is assigned"), SavedPreview->InputMesh.ToSoftObjectPath().ToString(),
-                    FString(TEXT("/Game/GarmentFitLab/Characters/LunaMk2/SKM_LunaMk2.SKM_LunaMk2")));
+                TestEqual(TEXT("The requested mannequin derivative is assigned"), SavedPreview->InputMesh.ToSoftObjectPath().ToString(),
+                    FString(TEXT("/Game/GarmentFitLab/Characters/LunaMk2/SKM_LunaMk2_Mannequin.SKM_LunaMk2_Mannequin")));
                 SavedPreview->RefreshInput();
                 TestEqual(TEXT("Supplied character is ready after reopening"), SavedPreview->GetInputState(), EGarmentFitInputState::Ready);
                 TestTrue(TEXT("Saved level references the real WBP"), SavedPreview->InputWidgetClass == Blueprint->GeneratedClass);
@@ -190,6 +190,52 @@ bool FGarmentFitSuppliedInputTest::RunTest(const FString& Parameters)
             TestTrue(TEXT("Every body slot uses the requested new material"), Slot.MaterialInterface == Matte);
         }
     }
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGarmentFitMannequinTest, "GarmentFitLab.Input.MannequinDerivative",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FGarmentFitMannequinTest::RunTest(const FString& Parameters)
+{
+    USkeletalMesh* Original = LoadObject<USkeletalMesh>(nullptr,
+        TEXT("/Game/GarmentFitLab/Characters/LunaMk2/SKM_LunaMk2.SKM_LunaMk2"));
+    USkeletalMesh* Mannequin = LoadObject<USkeletalMesh>(nullptr,
+        TEXT("/Game/GarmentFitLab/Characters/LunaMk2/SKM_LunaMk2_Mannequin.SKM_LunaMk2_Mannequin"));
+    if (!TestNotNull(TEXT("First import is preserved"), Original) ||
+        !TestNotNull(TEXT("Mannequin derivative reopens"), Mannequin)) return false;
+    TestTrue(TEXT("Derivative retains the existing skeleton"), Mannequin->GetSkeleton() == Original->GetSkeleton());
+    const FReferenceSkeleton& Before = Original->GetRefSkeleton();
+    const FReferenceSkeleton& After = Mannequin->GetRefSkeleton();
+    if (TestEqual(TEXT("Bone hierarchy size is unchanged"), After.GetNum(), Before.GetNum()))
+    {
+        for (int32 Index = 0; Index < Before.GetNum(); ++Index)
+        {
+            TestEqual(TEXT("Bone names stay aligned"), After.GetBoneName(Index), Before.GetBoneName(Index));
+            TestEqual(TEXT("Bone parent stays aligned"), After.GetParentIndex(Index), Before.GetParentIndex(Index));
+            TestTrue(TEXT("Reference pose is preserved"), After.GetRefBonePose()[Index].Equals(Before.GetRefBonePose()[Index], 0.0001));
+        }
+    }
+    UMaterial* Matte = LoadObject<UMaterial>(nullptr, TEXT("/Game/GarmentFitLab/Materials/M_LunaMk2_Matte.M_LunaMk2_Matte"));
+    for (const FSkeletalMaterial& Slot : Mannequin->GetMaterials())
+    {
+        TestTrue(TEXT("Derivative uses the same texture-free matte material"), Slot.MaterialInterface == Matte);
+    }
+    const FSkeletalMeshRenderData* Render = Mannequin->GetResourceForRendering();
+    if (!TestTrue(TEXT("Rebuilt surface renders"), Render && !Render->LODRenderData.IsEmpty())) return false;
+    const FSkeletalMeshLODRenderData& LOD = Render->LODRenderData[0];
+    FBox Bounds(ForceInit);
+    for (uint32 Index = 0; Index < LOD.GetNumVertices(); ++Index)
+    {
+        Bounds += FVector(LOD.StaticVertexBuffers.PositionVertexBuffer.VertexPosition(Index));
+    }
+    TestTrue(TEXT("Mannequin keeps source height"), FMath::IsNearlyEqual(Bounds.GetSize().Z, 135.696, 0.2));
+    TestTrue(TEXT("Mannequin keeps hand span"), FMath::IsNearlyEqual(Bounds.GetSize().Y, 57.315, 0.2));
+    TestTrue(TEXT("All rebuilt sections have geometry"), !LOD.RenderSections.IsEmpty());
+    int32 TriangleCount = 0;
+    for (const FSkelMeshRenderSection& Section : LOD.RenderSections) TriangleCount += Section.NumTriangles;
+    TestEqual(TEXT("Authored closed surface survives FBX import"), TriangleCount, 75010);
+    AddInfo(FString::Printf(TEXT("Mannequin bounds cm: %s; triangles %d"), *Bounds.GetSize().ToString(), TriangleCount));
     return true;
 }
 
