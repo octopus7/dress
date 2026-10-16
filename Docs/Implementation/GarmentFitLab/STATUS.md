@@ -1,8 +1,31 @@
 # GarmentFitLab 구현 기록
 
-근거: REQ-021~023, REQ-025, [설계](../../Design/GARMENT_FIT_LAB_DESIGN.md), [계획](../../Plans/2026-10-17-garment-fit-lab.md).
+근거: REQ-021~023, REQ-025, REQ-028, [설계](../../Design/GARMENT_FIT_LAB_DESIGN.md), [계획](../../Plans/2026-10-17-garment-fit-lab.md).
 
-## 현재 — REQ-025 소매 흔적을 정리한 마네킹 입력 (2026-10-17)
+## 현재 — REQ-028 팔·다리 비율과 골격 동시 보정 (2026-10-17)
+
+전용 레벨 입력은 **SKM_LunaMk2_MannequinFit**이다. 정면·측면에서 짧은 팔과 허벅지보다 긴 정강이를 확인하고 팔을 30% 늘리고 정강이의 세로 길이를 20% 줄였다. 가짜 머리는 신체 비율의 기준으로 사용하지 않았다. 단계 1 입력 개선이며 단계 2는 시작하지 않았다.
+
+| 관절 사이 길이 | 이전 | 보정 후 |
+|---|---:|---:|
+| 어깨 → 팔꿈치 | 13.860cm | 18.019cm |
+| 팔꿈치 → 손목 | 12.385cm | 16.101cm |
+| 엉덩관절 → 무릎 | 32.242cm | 32.242cm |
+| 무릎 → 발목 | 42.204cm | 33.834cm |
+
+- 위 수치는 왼쪽 기준이며 오른쪽도 같은 규칙을 적용했다. 정강이는 Z 방향을 줄이므로 3D 관절 거리는 약 19.8% 감소했다. 전체 다리 관절 길이는 약 11.2% 감소했다. UE 실제 표면 크기는 **높이 127.226cm / 좌우 폭 65.986cm / 깊이 24.508cm**이다.
+- 팔은 관절 축 방향으로 늘려 두께와 손 크기를 유지했다. 발목·발·발 IK는 유지하고 정강이 압축에 따라 무릎·허벅지·몸통을 아래로 옮겼다. 발목과 무릎 주변 압축률을 부드럽게 연결했다.
+- 메시와 관절·twist/share 보조 본·손 IK에 같은 변형 규칙을 적용했다. **이름·부모 관계 131개와 기존 축·단위 변환 스케일은 유지**했다. Blender의 130개 본에 FBX armature 루트가 더해진 개수다. 새 `_MannequinFit_Skeleton`을 사용하므로 기존 Mk2/REQ-025 스켈레톤과 기준 포즈는 바뀌지 않는다.
+- 소매를 제거한 표면의 **37,507정점 / 75,010삼각형**, 스킨 가중치, 가짜 머리와 텍스처 없는 `M_LunaMk2_Matte`를 유지했다. 보정 원본은 `Content/GarmentFitLab/Source/SKM_LunaMk2_MannequinFit.blend`와 `.fbx`, UE 메시·새 스켈레톤은 `Content/GarmentFitLab/Characters/LunaMk2/`에 저장했다.
+- 재현: 기존 `SKM_LunaMk2_Mannequin.blend`를 로드한 별도 Blender 프로세스에서 `fit_luna_mannequin.py` 실행 → UE `import_luna_mannequin_fit.py`로 신규 임포트 → 보정 blend를 다시 열어 `verify_luna_mannequin_fit.py` 실행. 스크립트는 `Plugins/GarmentFitLab/Content/Python/`에 있다. 검증 포즈·렌더 재질은 저작본에 저장하지 않는다.
+- UE 5.8.3 Editor 빌드 성공: `Saved/GarmentFitLab/build-mannequin-fit.log`. 최종 임포트/재임포트 성공 로그는 `mannequin-fit-reimport.log`다. 기본 UV 생성 경고 1건만 있으며 단색 재질에는 영향이 없다.
+- **GarmentFitLab.Input 5개 + LaceLoft 16개 = 21/21 성공**, `failed=0`, `notRun=0`, 모든 테스트 상태 `Success`. 결과: `Saved/GarmentFitLab/mannequin-fit-final-report/index.json`. 예상 누락 경로 경고 1건은 기존 검증이다.
+- 새 검증은 저장된 독립 스켈레톤과 메시의 bind pose 일치, 관절 길이·IK·축·스케일·발 위치, 표면 치수·토폴로지·재질, 실제 UE CPU 스키닝의 굽힘과 초기화를 확인한다. UE rest surface 최대 오차 **0.000054cm**, 굽힘 최대 이동 **41.905cm**, 원래 자세 복귀 오차 **0cm**이다.
+- Blender 저장본 재열기에서 원본과 동일한 스킨 가중치, bind 최대 오차 **1.79e-7m**, 굽힘 상태 비다양체 모서리 0·퇴화 면 0을 확인했다. 보고서: `mannequin-fit-reopen.json`. 정면·측면·후면 및 팔꿈치·무릎 굽힘 저작 렌더: `mannequin-fit-{front,side,back,bend-front,bend-side}.png`.
+- **한계:** 깊은 굽힘에서는 기존 가중치에 따른 관절 눌림·각진 표면이 남는다. 최대 국소 모서리 늘어남은 약 3.07배로, 애니메이션용 스킨 품질 전체를 완료했다고 판단하지 않는다. 리타기팅·보정 모프·다양한 동작은 이번 요청 밖이다. 최종 UE 화면 확인은 사용자가 컴퓨터 유즈를 중지하여 완료하지 않았으며, UE 저장본 검증은 위 commandlet 자동화 결과다.
+- 읽기 전용 검토에서 코드·애셋의 Critical/Important 결함은 없었다. 동시 작업에서 중복된 요청 번호는 이번 작업을 REQ-028로 바꿔 정리했다. 외부 원본 SHA-256은 `9DA0A1A696D69CD649CD4E87ACFF2A1EDBCAB497D478ECA49CE9FC68F1AC0640`으로 동일하며 최초 입력·REQ-025 기준본과 타 작업 변경을 보존했다.
+
+## 이전 — REQ-025 소매 흔적을 정리한 마네킹 입력 (2026-10-17)
 
 `/Game/Maps/L_GarmentFitLab`의 입력을 **SKM_LunaMk2_Mannequin**으로 교체했다. 기존 Mk2 메시·스켈레톤·무광 재질과 외부 제공 원본은 보존했다. 단계 1의 입력 개선만 수행했으며 단계 2는 시작하지 않았다.
 

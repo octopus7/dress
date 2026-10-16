@@ -1,6 +1,7 @@
 #include "Misc/AutomationTest.h"
 #include "GarmentFitPreviewActor.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Components/PoseableMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/SkeletalMesh.h"
 #include "Engine/StaticMesh.h"
@@ -130,7 +131,7 @@ bool FGarmentFitSavedAssetsTest::RunTest(const FString& Parameters)
                 USkeletalMesh* Character = Cast<USkeletalMesh>(SavedPreview->InputMesh.LoadSynchronous());
                 TestNotNull(TEXT("Supplied Mk2 input reopens as a skeletal mesh"), Character);
                 TestEqual(TEXT("The requested mannequin derivative is assigned"), SavedPreview->InputMesh.ToSoftObjectPath().ToString(),
-                    FString(TEXT("/Game/GarmentFitLab/Characters/LunaMk2/SKM_LunaMk2_Mannequin.SKM_LunaMk2_Mannequin")));
+                    FString(TEXT("/Game/GarmentFitLab/Characters/LunaMk2/SKM_LunaMk2_MannequinFit.SKM_LunaMk2_MannequinFit")));
                 SavedPreview->RefreshInput();
                 TestEqual(TEXT("Supplied character is ready after reopening"), SavedPreview->GetInputState(), EGarmentFitInputState::Ready);
                 TestTrue(TEXT("Saved level references the real WBP"), SavedPreview->InputWidgetClass == Blueprint->GeneratedClass);
@@ -236,6 +237,134 @@ bool FGarmentFitMannequinTest::RunTest(const FString& Parameters)
     for (const FSkelMeshRenderSection& Section : LOD.RenderSections) TriangleCount += Section.NumTriangles;
     TestEqual(TEXT("Authored closed surface survives FBX import"), TriangleCount, 75010);
     AddInfo(FString::Printf(TEXT("Mannequin bounds cm: %s; triangles %d"), *Bounds.GetSize().ToString(), TriangleCount));
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGarmentFitProportionsTest, "GarmentFitLab.Input.FittedMannequin",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FGarmentFitProportionsTest::RunTest(const FString& Parameters)
+{
+    USkeletalMesh* Baseline = LoadObject<USkeletalMesh>(nullptr,
+        TEXT("/Game/GarmentFitLab/Characters/LunaMk2/SKM_LunaMk2_Mannequin.SKM_LunaMk2_Mannequin"));
+    USkeletalMesh* Fitted = LoadObject<USkeletalMesh>(nullptr,
+        TEXT("/Game/GarmentFitLab/Characters/LunaMk2/SKM_LunaMk2_MannequinFit.SKM_LunaMk2_MannequinFit"));
+    if (!TestNotNull(TEXT("Baseline reopens"), Baseline) || !TestNotNull(TEXT("Fitted input reopens"), Fitted)) return false;
+    if (!TestNotNull(TEXT("Fitted skeleton reopens"), Fitted->GetSkeleton())) return false;
+    TestTrue(TEXT("Changed rest pose has an independent skeleton"), Fitted->GetSkeleton() != Baseline->GetSkeleton());
+    const FReferenceSkeleton& Before = Baseline->GetRefSkeleton();
+    const FReferenceSkeleton& After = Fitted->GetRefSkeleton();
+    const FReferenceSkeleton& SavedSkeleton = Fitted->GetSkeleton()->GetReferenceSkeleton();
+    if (!TestEqual(TEXT("All 131 bones survive fitting"), After.GetNum(), Before.GetNum()) ||
+        !TestEqual(TEXT("Skeleton and mesh have the same bone count"), SavedSkeleton.GetNum(), After.GetNum())) return false;
+    TArray<FTransform> OldComponent, NewComponent;
+    for (int32 Index = 0; Index < After.GetNum(); ++Index)
+    {
+        TestEqual(TEXT("Fitted bone names are retained"), After.GetBoneName(Index), Before.GetBoneName(Index));
+        TestEqual(TEXT("Fitted parents are retained"), After.GetParentIndex(Index), Before.GetParentIndex(Index));
+        TestEqual(TEXT("Saved skeleton names match mesh"), SavedSkeleton.GetBoneName(Index), After.GetBoneName(Index));
+        TestEqual(TEXT("Saved skeleton parents match mesh"), SavedSkeleton.GetParentIndex(Index), After.GetParentIndex(Index));
+        TestTrue(TEXT("Saved skeleton rest pose matches mesh bind pose"),
+            SavedSkeleton.GetRefBonePose()[Index].Equals(After.GetRefBonePose()[Index], 0.001));
+        const int32 Parent = After.GetParentIndex(Index);
+        OldComponent.Add(Parent == INDEX_NONE ? Before.GetRefBonePose()[Index] : Before.GetRefBonePose()[Index] * OldComponent[Parent]);
+        NewComponent.Add(Parent == INDEX_NONE ? After.GetRefBonePose()[Index] : After.GetRefBonePose()[Index] * NewComponent[Parent]);
+        TestTrue(TEXT("Fitting preserves joint axes"), NewComponent[Index].GetRotation().AngularDistance(OldComponent[Index].GetRotation()) < 0.001);
+        // FBX retains the armature's meter-to-centimeter conversion scale.
+        // Limb lengths must change joint translations, not add bone scaling.
+        TestTrue(TEXT("Fitting adds no bone scale"), NewComponent[Index].GetScale3D().Equals(OldComponent[Index].GetScale3D(), 0.001));
+    }
+    const auto Point = [&After, &NewComponent](const FString& Name)
+    {
+        return NewComponent[After.FindBoneIndex(*Name)].GetLocation();
+    };
+    for (const FString Side : {FString(TEXT("l")), FString(TEXT("r"))})
+    {
+        for (const FString Joint : {FString(TEXT("upperarm_")), FString(TEXT("lowerarm_")), FString(TEXT("hand_")),
+            FString(TEXT("thigh_")), FString(TEXT("calf_")), FString(TEXT("foot_")), FString(TEXT("ik_hand_")), FString(TEXT("ik_foot_"))})
+        {
+            if (!TestTrue(TEXT("Required fitting joint exists"), After.FindBoneIndex(*(Joint + Side)) != INDEX_NONE)) return false;
+        }
+        const double Upper = FVector::Distance(Point(TEXT("upperarm_")+Side), Point(TEXT("lowerarm_")+Side));
+        const double Fore = FVector::Distance(Point(TEXT("lowerarm_")+Side), Point(TEXT("hand_")+Side));
+        const double Thigh = FVector::Distance(Point(TEXT("thigh_")+Side), Point(TEXT("calf_")+Side));
+        const double Calf = FVector::Distance(Point(TEXT("calf_")+Side), Point(TEXT("foot_")+Side));
+        TestTrue(TEXT("Upper arm is lengthened with its joints"), FMath::IsNearlyEqual(Upper, 18.0185, 0.01));
+        TestTrue(TEXT("Forearm is lengthened with its joints"), FMath::IsNearlyEqual(Fore, 16.1007, 0.01));
+        TestTrue(TEXT("Thigh retains its length"), FMath::IsNearlyEqual(Thigh, 32.2423, 0.01));
+        TestTrue(TEXT("Calf is shortened with its joints"), FMath::IsNearlyEqual(Calf, 33.834, 0.01));
+        TestTrue(TEXT("Hand IK follows the new wrist"), Point(TEXT("ik_hand_")+Side).Equals(Point(TEXT("hand_")+Side), 0.001));
+        TestTrue(TEXT("Foot IK stays at the ankle"), Point(TEXT("ik_foot_")+Side).Equals(Point(TEXT("foot_")+Side), 0.001));
+        const int32 FootIndex = After.FindBoneIndex(*(TEXT("foot_")+Side));
+        TestTrue(TEXT("Feet retain their floor placement"), NewComponent[FootIndex].GetLocation().Equals(OldComponent[FootIndex].GetLocation(), 0.001));
+        AddInfo(FString::Printf(TEXT("Fitted %s lengths cm: arm %.4f + %.4f, leg %.4f + %.4f"), *Side, Upper, Fore, Thigh, Calf));
+    }
+    const FSkeletalMeshRenderData* Render = Fitted->GetResourceForRendering();
+    if (!TestTrue(TEXT("Fitted mesh has render data"), Render && !Render->LODRenderData.IsEmpty())) return false;
+    const FSkeletalMeshLODRenderData& LOD = Render->LODRenderData[0];
+    FBox Bounds(ForceInit);
+    for (uint32 Index = 0; Index < LOD.GetNumVertices(); ++Index)
+        Bounds += FVector(LOD.StaticVertexBuffers.PositionVertexBuffer.VertexPosition(Index));
+    TestTrue(TEXT("Shorter legs are reflected in surface height"), FMath::IsNearlyEqual(Bounds.GetSize().Z, 127.226, 0.02));
+    TestTrue(TEXT("Longer arms are reflected in surface span"), FMath::IsNearlyEqual(Bounds.GetSize().Y, 65.9857, 0.02));
+    int32 Triangles = 0;
+    for (const FSkelMeshRenderSection& Section : LOD.RenderSections) Triangles += Section.NumTriangles;
+    TestEqual(TEXT("Limb fitting preserves the closed topology"), Triangles, 75010);
+    UMaterial* Matte = LoadObject<UMaterial>(nullptr, TEXT("/Game/GarmentFitLab/Materials/M_LunaMk2_Matte.M_LunaMk2_Matte"));
+    for (const FSkeletalMaterial& Slot : Fitted->GetMaterials())
+        TestTrue(TEXT("Fitted body retains the requested matte"), Slot.MaterialInterface == Matte);
+    AddInfo(FString::Printf(TEXT("Fitted surface cm: %s"), *Bounds.GetSize().ToString()));
+
+    // Exercise the imported skin and inverse bind matrices, not just bone names.
+    UWorld* PoseWorld = UWorld::CreateWorld(EWorldType::EditorPreview, false);
+    AActor* PoseActor = PoseWorld->SpawnActor<AActor>();
+    UPoseableMeshComponent* Pose = NewObject<UPoseableMeshComponent>(PoseActor);
+    PoseActor->SetRootComponent(Pose);
+    Pose->SetSkinnedAssetAndUpdate(Fitted);
+    Pose->RegisterComponentWithWorld(PoseWorld);
+    Pose->RefreshBoneTransforms();
+    TArray<FMatrix44f> RefToLocal;
+    TArray<FVector3f> RestPositions, BentPositions, ResetPositions;
+    const auto Skin = [&]()
+    {
+        TArray<FVector3f> Positions;
+        Pose->GetCurrentRefToLocalMatrices(RefToLocal, 0);
+        USkinnedMeshComponent::ComputeSkinnedPositions(Pose, Positions, RefToLocal, LOD, LOD.SkinWeightVertexBuffer);
+        return Positions;
+    };
+    RestPositions = Skin();
+    double RestError = 0;
+    for (int32 Index = 0; Index < RestPositions.Num(); ++Index)
+        RestError = FMath::Max(RestError, double(FVector3f::Distance(RestPositions[Index], LOD.StaticVertexBuffers.PositionVertexBuffer.VertexPosition(Index))));
+    TestEqual(TEXT("Every imported vertex has a rest skin result"), RestPositions.Num(), int32(LOD.GetNumVertices()));
+    TestTrue(TEXT("Imported inverse binds reproduce the rest surface"), RestError < 0.02);
+    for (const FName Joint : {FName(TEXT("lowerarm_l")), FName(TEXT("lowerarm_r")), FName(TEXT("calf_l")), FName(TEXT("calf_r"))})
+    {
+        FTransform Transform = Pose->GetBoneTransformByName(Joint, EBoneSpaces::ComponentSpace);
+        Transform.SetRotation(FQuat(FVector::YAxisVector, FMath::DegreesToRadians(60.0)) * Transform.GetRotation());
+        Pose->SetBoneTransformByName(Joint, Transform, EBoneSpaces::ComponentSpace);
+    }
+    Pose->RefreshBoneTransforms();
+    BentPositions = Skin();
+    double MaxMovement = 0;
+    bool bFinite = BentPositions.Num() == RestPositions.Num();
+    for (int32 Index = 0; Index < BentPositions.Num(); ++Index)
+    {
+        bFinite &= !BentPositions[Index].ContainsNaN() && BentPositions[Index].Size() < 250.0f;
+        MaxMovement = FMath::Max(MaxMovement, double(FVector3f::Distance(BentPositions[Index], RestPositions[Index])));
+    }
+    TestTrue(TEXT("Elbow and knee bends keep finite skin positions"), bFinite);
+    TestTrue(TEXT("Imported skin follows the bent limbs"), MaxMovement > 10.0);
+    for (const FName Joint : {FName(TEXT("lowerarm_l")), FName(TEXT("lowerarm_r")), FName(TEXT("calf_l")), FName(TEXT("calf_r"))})
+        Pose->ResetBoneTransformByName(Joint);
+    Pose->RefreshBoneTransforms();
+    ResetPositions = Skin();
+    double ResetError = 0;
+    for (int32 Index = 0; Index < ResetPositions.Num(); ++Index)
+        ResetError = FMath::Max(ResetError, double(FVector3f::Distance(ResetPositions[Index], RestPositions[Index])));
+    TestTrue(TEXT("Reference surface restores after bending"), ResetError < 0.02);
+    AddInfo(FString::Printf(TEXT("Fitted skin cm: rest error %.6f, bend movement %.3f, reset error %.6f"), RestError, MaxMovement, ResetError));
+    PoseWorld->DestroyWorld(false);
     return true;
 }
 
