@@ -17,6 +17,10 @@
   ],
   "Plugins": [
     {
+      "Name": "GarmentFitLab",
+      "Enabled": true
+    },
+    {
       "Name": "ChaosClothAsset",
       "Enabled": true
     },

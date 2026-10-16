@@ -1,0 +1,14 @@
+{
+  "FileVersion": 3,
+  "Version": 1,
+  "VersionName": "0.1",
+  "FriendlyName": "Garment Fit Lab",
+  "Description": "Independent character input and garment fitting experiments.",
+  "Category": "Editor",
+  "CanContainContent": true,
+  "EnabledByDefault": false,
+  "Modules": [
+    { "Name": "GarmentFitLab", "Type": "Runtime", "LoadingPhase": "Default" },
+    { "Name": "GarmentFitLabEditor", "Type": "Editor", "LoadingPhase": "Default" }
+  ]
+}
