@@ -412,6 +412,13 @@ static bool CaptureState(FPreviewScene& Scene, UChaosClothComponent* Component, 
 {
     if (!Support::EnsureClothRenderReady(Component, Error)) return false;
     FlushPersistentDebugLines(Scene.GetWorld());
+    FBox Bounds = Assets.Body->GetBoundingBox().TransformBy(BodyTransform);
+    for (const FVector3f& P : Positions) Bounds += FVector(P);
+    const double Size = FMath::Max(90., Bounds.GetSize().GetMax());
+    const FVector LookAt = Bounds.GetCenter();
+    const FVector CameraLocation = LookAt + FVector(Size * 0.85, Size * 1.65, Size * 0.55);
+    Component->MarkRenderDynamicDataDirty();
+    if (!Support::CapturePreview(Scene, File.LeftChop(4) + TEXT("-surface.png"), CameraLocation, LookAt, Error, Component)) return false;
     const FCollectionClothConstFacade Cloth(static_cast<const UChaosClothAsset*>(Assets.Pinned)->GetClothCollections()[0]);
     for (const FIntVector3& T : Cloth.GetSimIndices3D())
         for (int32 K = 0; K < 3; ++K)
@@ -425,13 +432,9 @@ static bool CaptureState(FPreviewScene& Scene, UChaosClothComponent* Component, 
         DrawDebugPoint(Scene.GetWorld(), FVector(Positions[Pin.WeldedVertex]), 11.f, bEnabled ? FColor::Green : FColor::Orange, true);
         DrawDebugLine(Scene.GetWorld(), Target, Target + BodyTransform.TransformVectorNoScale(FVector(Pin.BodyLocalNormal)) * 5., FColor::Yellow, true, -1, 0, 0.5f);
     }
-    FBox Bounds = Assets.Body->GetBoundingBox().TransformBy(BodyTransform);
-    for (const FVector3f& P : Positions) Bounds += FVector(P);
-    const double Size = FMath::Max(90., Bounds.GetSize().GetMax());
-    const FVector LookAt = Bounds.GetCenter();
     Component->MarkRenderDynamicDataDirty();
     Scene.GetWorld()->SendAllEndOfFrameUpdates(); FlushRenderingCommands();
-    return Support::CapturePreview(Scene, File, LookAt + FVector(Size * 0.85, Size * 1.65, Size * 0.55), LookAt, Error);
+    return Support::CapturePreview(Scene, File, CameraLocation, LookAt, Error);
 }
 
 static bool AssertNativeCount(UChaosClothComponent* Component, int32 ExpectedPins, int32 ExpectedVertices, FString& Error)

@@ -1,6 +1,6 @@
 param(
     [ValidateSet('All', 'Build', 'Create', 'Reopen')][string]$Mode = 'All',
-    [ValidateSet('Regression', 'Sewing', 'BodyPins', 'Integration', 'All')][string]$Suite = 'Regression',
+    [ValidateSet('Regression', 'Sewing', 'BodyPins', 'Integration', 'Rendering', 'All')][string]$Suite = 'Regression',
     [string]$EngineRoot = 'E:\WorkTemp\Epic Games\UE_5.8'
 )
 $ErrorActionPreference = 'Stop'
@@ -17,6 +17,7 @@ $suiteTests = @{
     Sewing = @('Sewing.EqualLength', 'Sewing.NonuniformRefinement', 'Sewing.DirectionFlip', 'Sewing.MismatchPolicy', 'Sewing.InvalidBoundary', 'Sewing.InvalidCorrespondence', 'Sewing.NativeExperiment')
     BodyPins = @('BodyPins.TargetAndLifecycle', 'BodyPins.NativeFollowReleaseAndReopen')
     Integration = @('Integration.SewnBodyPins')
+    Rendering = @('Rendering.SurfacesExcludeDebugAndBody')
 }
 $selectedTests = if ($Suite -eq 'All') { @($suiteTests.Values | ForEach-Object { $_ }) } else { @($suiteTests[$Suite]) }
 $expectedTests = @($selectedTests | ForEach-Object { 'GarmentFitClothProbe.' + $_ } | Sort-Object)
@@ -76,7 +77,9 @@ if ($Mode -in @('All', 'Reopen')) {
     }) | ConvertTo-Json -Depth 3 | Set-Content -LiteralPath "$runRoot\SourceAssetHashes.json" -Encoding utf8
     Write-Output "Reopen preserved all $($assets.Count) source asset hashes."
 }
-if ($Mode -eq 'All') {
+# Rendering verifies pixel coverage and deliberate negative controls in each
+# process; it does not simulate or emit final-position metrics.
+if ($Mode -eq 'All' -and $Suite -ne 'Rendering') {
     $createRoot = Join-Path $runRoot 'Create'
     $reopenRoot = Join-Path $runRoot 'Reopen'
     $metricsFiles = @(Get-ChildItem -LiteralPath $createRoot -Recurse -File -Filter '*metrics.json')

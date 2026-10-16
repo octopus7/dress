@@ -8,7 +8,13 @@ REQ-024 전용 실험이다. 메인 GarmentFitLab의 단계 2나 실제 의상 �
 & 'D:\github\dress\Tools\GarmentFitClothProbe\Run-Probe.ps1' -Mode All -Suite All
 ```
 
-`-Suite Sewing`, `-Suite BodyPins`, `-Suite Integration`으로 각각 7개/2개/1개 자동화를 실행할 수 있다. `All` suite는 기존 회귀 2개를 포함한 정확한 12개 테스트 이름을 확인한다. 통합 suite는 봉제 asset을 별도로 확보한 뒤 바디 핀을 적용한 사본을 실행한다. `Create`/`All`은 선택한 기능의 전용 fixture 애셋을 재생성한다. `Reopen`은 애셋을 읽기만 하며 플러그인 안의 모든 `.uasset` 목록과 SHA-256 보존을 검사한다. 생성/재열기의 모든 `*metrics.json`에서 최종 정점 좌표 차이 ≤0.05cm를 확인하고 `CrossProcess.json`, `SourceAssetHashes.json`에 기록한다.
+`-Suite Sewing`, `-Suite BodyPins`, `-Suite Integration`, `-Suite Rendering`으로 각각 7개/2개/1개/1개 자동화를 실행할 수 있다. `All` suite는 기존 회귀 2개를 포함한 정확한 13개 테스트 이름을 확인한다. 통합 suite는 봉제 asset을 별도로 확보한 뒤 바디 핀을 적용한 사본을 실행한다. `Create`/`All`은 선택한 기능의 전용 fixture 애셋을 재생성한다. `Reopen`은 애셋을 읽기만 하며 플러그인 안의 모든 `.uasset` 목록과 SHA-256 보존을 검사한다. 생성/재열기의 모든 `*metrics.json`에서 최종 정점 좌표 차이 ≤0.05cm를 확인하고 `CrossProcess.json`, `SourceAssetHashes.json`에 기록한다.
+
+REQ-029부터 모든 회귀·봉제·바디 핀·통합 상태는 기존 검사선 PNG 외에 `*-surface.png`를 남긴다. 이 화면에는 검사선을 넣지 않는다. 같은 카메라로 네이티브 Cloth Component만 렌더한 `*-surface-cloth-only.png`와 `*-surface-coverage.json`도 저장한다. 1200×900 이미지에서 RGB 최대 채널이 16을 넘는 픽셀이 1,000개 이상이어야 통과하며, show-only 목록으로 마네킹·충돌 표시물·검사선이 이 수치를 대신 채우지 못하게 한다. 임의 재질·카메라에 대한 범용 영상 판정이 아니라 고정 실험 장면의 빈 표면 회귀 검사다.
+
+`Rendering.SurfacesExcludeDebugAndBody`는 실제 천만 있는 양성 대조를 통과시킨 후, 천을 숨기고 큐브 또는 큰 검사점만 남긴 두 음성 대조가 실패하는지 확인한다. `Rendering/`의 두 음성 대조 coverage JSON은 의도적으로 `passed=false`다. 기능 실험의 표면 검증은 각 suite의 기존 native 테스트 안에서 실행되며, 재열기에서도 동일하다. `-Mode All -Suite Rendering`은 빌드·두 프로세스 검사·원본 해시 보존을 실행하며 시뮬레이션 좌표 비교는 하지 않는다.
+
+첫 캡처 전에 `UMaterialInterface::EnsureIsComplete()`로 해당 재질의 셰이더 맵을 완성한다. 컴파일 작업 큐가 비어 있거나 렌더 프록시가 존재하는 것만으로 준비 완료로 판단하지 않는다. 기본 미리보기의 한쪽 조명에 반대편 보조광을 더해 양쪽 방향의 실제 천 법선을 비추고, 물리 카메라 노출은 끈 고정 수동 노출을 사용한다. 보조광은 각 캡처 뒤 제거한다. 천의 재질·원본 법선·시뮬레이션 입력은 변경하지 않는다.
 
 두 구현의 API·검사 범위·한계는 [Sewing/IMPLEMENTATION.md](Sewing/IMPLEMENTATION.md), [BodyPins/IMPLEMENTATION.md](BodyPins/IMPLEMENTATION.md)를 참고한다. 바디 사본은 [고정 snapshot 기록](BodyPins/SNAPSHOT.md)에 따라 독립 경로에 저장했다. 실제 마네킹 사용 허용은 REQ-026 핀 실험에 한하며 아래 REQ-024 원래 범위를 확대 해석하지 않는다.
 

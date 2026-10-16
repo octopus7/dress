@@ -20,6 +20,9 @@ bool ResolveVertex(const TSharedRef<const FManagedArrayCollection>& Collection,
 void TickCloth(UChaosClothComponent* Component, float Dt);
 bool ReadNativePositions(UChaosClothComponent* Component, TArray<FVector3f>& Out, FString& Error);
 bool EnsureClothRenderReady(UChaosClothComponent* Component, FString& Error);
+// With SurfaceToVerify, first isolate that native component and require >=1000
+// material pixels; save cloth-only PNG + coverage JSON, then the full scene PNG.
+// Call after clearing debug lines for a clean surface capture.
 bool CapturePreview(FPreviewScene& Scene, const FString& Filename, const FVector& CameraLocation,
-    const FVector& LookAt, FString& Error);
+    const FVector& LookAt, FString& Error, UChaosClothComponent* SurfaceToVerify = nullptr);
 }

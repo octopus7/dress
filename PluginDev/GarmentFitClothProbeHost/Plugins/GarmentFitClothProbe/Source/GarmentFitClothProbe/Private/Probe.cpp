@@ -13,13 +13,10 @@
 #include "GeometryCollection/ManagedArrayCollection.h"
 #include "PhysicsEngine/PhysicsAsset.h"
 #include "PhysicsEngine/SkeletalBodySetup.h"
-#include "Components/SceneCaptureComponent2D.h"
 #include "Components/StaticMeshComponent.h"
-#include "Engine/TextureRenderTarget2D.h"
 #include "Engine/StaticMesh.h"
 #include "PreviewScene.h"
 #include "DrawDebugHelpers.h"
-#include "ImageUtils.h"
 #include "RenderingThread.h"
 #include "ShaderCompiler.h"
 #include "AssetCompilingManager.h"
@@ -193,6 +190,9 @@ static bool Capture(FPreviewScene& Scene, UChaosClothComponent* Component, const
     // The cloth surface is rendered by the actual UChaosClothComponent; thin debug lines
     // overlay the measured native sim topology. No substitute mesh or UI widget tree.
     FlushPersistentDebugLines(Scene.GetWorld());
+    const FVector Location(190, bBackView ? -210 : 210, 165), LookAt(0, -10, 35);
+    Component->MarkRenderDynamicDataDirty();
+    if (!Support::CapturePreview(Scene, File.LeftChop(4) + TEXT("-surface.png"), Location, LookAt, Error, Component)) return false;
     const auto Triangles = Cloth.GetSimIndices3D();
     for (int32 I = 0; I < Triangles.Num(); ++I)
     {
@@ -209,33 +209,8 @@ static bool Capture(FPreviewScene& Scene, UChaosClothComponent* Component, const
             DrawDebugPoint(Scene.GetWorld(), FVector(Positions[I]), 7.f, FColor::Green, true);
     if (bSphere) DrawDebugSphere(Scene.GetWorld(), SphereCenter, SphereRadius, 32, FColor(240, 90, 130), true, -1, 0, 0.35f);
 
-    UTextureRenderTarget2D* Target = NewObject<UTextureRenderTarget2D>();
-    Target->InitCustomFormat(1200, 900, PF_B8G8R8A8, false);
-    Target->ClearColor = FLinearColor(0.015f, 0.02f, 0.035f, 1.f);
-    Target->UpdateResourceImmediate(true);
-    USceneCaptureComponent2D* Camera = NewObject<USceneCaptureComponent2D>();
-    Camera->TextureTarget = Target;
-    Camera->CaptureSource = SCS_FinalColorLDR;
-    Camera->bCaptureEveryFrame = false;
-    Camera->bCaptureOnMovement = false;
-    Camera->FOVAngle = 42.f;
-    Camera->ShowFlags.SetTemporalAA(false);
-    Camera->ShowFlags.SetMotionBlur(false);
-    Camera->PostProcessSettings.bOverride_AutoExposureMethod = true;
-    Camera->PostProcessSettings.AutoExposureMethod = AEM_Manual;
-    const FVector Location(190, bBackView ? -210 : 210, 165), LookAt(0, -10, 35);
-    Scene.AddComponent(Camera, FTransform((LookAt - Location).Rotation(), Location));
     Component->MarkRenderDynamicDataDirty();
-    Scene.GetWorld()->SendAllEndOfFrameUpdates();
-    FlushRenderingCommands();
-    Camera->CaptureScene();
-    FlushRenderingCommands();
-    TUniquePtr<FArchive> Archive(IFileManager::Get().CreateFileWriter(*File));
-    const bool bOk = Archive && FImageUtils::ExportRenderTarget2DAsPNG(Target, *Archive);
-    if (Archive) Archive->Close();
-    Scene.RemoveComponent(Camera);
-    if (!bOk) Error = TEXT("Capture failed: ") + File;
-    return bOk;
+    return Support::CapturePreview(Scene, File, Location, LookAt, Error);
 }
 
 struct FRunMetrics

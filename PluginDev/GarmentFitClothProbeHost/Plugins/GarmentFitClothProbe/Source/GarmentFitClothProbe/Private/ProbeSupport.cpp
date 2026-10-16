@@ -12,6 +12,7 @@
 #include "GeometryCollection/ManagedArrayCollection.h"
 #include "AssetCompilingManager.h"
 #include "Components/SceneCaptureComponent2D.h"
+#include "Components/DirectionalLightComponent.h"
 #include "Engine/TextureRenderTarget2D.h"
 #include "PreviewScene.h"
 #include "ImageUtils.h"
@@ -22,7 +23,11 @@
 #include "Misc/Parse.h"
 #include "Misc/Paths.h"
 #include "Misc/PackageName.h"
+#include "Misc/ScopeExit.h"
+#include "Misc/FileHelper.h"
+#include "Serialization/JsonSerializer.h"
 #include "UObject/SavePackage.h"
+#include "Materials/MaterialInterface.h"
 
 namespace GarmentFitClothProbe::Support
 {
@@ -152,8 +157,12 @@ bool EnsureClothRenderReady(UChaosClothComponent* Component, FString& Error)
 {
     if (!Component || !Component->GetWorld())
     { Error = TEXT("Native cloth capture requires a registered component"); return false; }
-    // Synchronous automation does not yield to the usual game-thread PSO
-    // completion pump. Finish native pipeline work before requiring the proxy.
+    // An empty global compiler queue does not mean a material's on-demand
+    // shader map is complete. Request its missing permutations before the very
+    // first draw; otherwise synchronous captures can omit the entire surface.
+    for (UMaterialInterface* Material : Component->GetMaterials())
+        if (Material) Material->EnsureIsComplete();
+
     PipelineStateCache::WaitForAllTasks();
     FTaskGraphInterface::Get().ProcessThreadUntilIdle(ENamedThreads::GameThread);
     Component->MarkRenderStateDirty();
@@ -169,7 +178,7 @@ bool EnsureClothRenderReady(UChaosClothComponent* Component, FString& Error)
 }
 
 bool CapturePreview(FPreviewScene& Scene, const FString& Filename, const FVector& CameraLocation,
-    const FVector& LookAt, FString& Error)
+    const FVector& LookAt, FString& Error, UChaosClothComponent* SurfaceToVerify)
 {
     UTextureRenderTarget2D* Target = NewObject<UTextureRenderTarget2D>();
     Target->InitCustomFormat(1200, 900, PF_B8G8R8A8, false);
@@ -184,17 +193,75 @@ bool CapturePreview(FPreviewScene& Scene, const FString& Filename, const FVector
     Camera->ShowFlags.SetMotionBlur(false);
     Camera->PostProcessSettings.bOverride_AutoExposureMethod = true;
     Camera->PostProcessSettings.AutoExposureMethod = AEM_Manual;
+    // Keep the fixed preview exposure independent of physical camera defaults.
+    Camera->PostProcessSettings.bOverride_AutoExposureApplyPhysicalCameraExposure = true;
+    Camera->PostProcessSettings.AutoExposureApplyPhysicalCameraExposure = false;
+    // FPreviewScene has a one-sided key and no ambient cubemap. Add a rear
+    // fill so the native cloth's opposite-facing normals remain visible too.
+    UDirectionalLightComponent* Fill = NewObject<UDirectionalLightComponent>();
+    Fill->SetMobility(EComponentMobility::Movable);
+    Fill->SetIntensity(UE_PI * 0.5f);
+    Scene.AddComponent(Fill, FTransform((CameraLocation - LookAt).Rotation()));
     Scene.AddComponent(Camera, FTransform((LookAt - CameraLocation).Rotation(), CameraLocation));
+    ON_SCOPE_EXIT { Scene.RemoveComponent(Camera); Scene.RemoveComponent(Fill); };
     Scene.GetWorld()->SendAllEndOfFrameUpdates();
     FlushRenderingCommands();
-    Camera->CaptureScene();
-    FlushRenderingCommands();
     IFileManager::Get().MakeDirectory(*FPaths::GetPath(Filename), true);
-    TUniquePtr<FArchive> Archive(IFileManager::Get().CreateFileWriter(*Filename));
-    const bool bSuccess = Archive && FImageUtils::ExportRenderTarget2DAsPNG(Target, *Archive);
-    if (Archive) Archive->Close();
-    Scene.RemoveComponent(Camera);
-    if (!bSuccess) Error = TEXT("Capture failed: ") + Filename;
-    return bSuccess;
+
+    auto Render = [&]()
+    {
+        Camera->CaptureScene();
+        FlushRenderingCommands();
+    };
+    auto SavePNG = [&](const FString& File)
+    {
+        TUniquePtr<FArchive> Archive(IFileManager::Get().CreateFileWriter(*File));
+        const bool bOK = Archive && FImageUtils::ExportRenderTarget2DAsPNG(Target, *Archive);
+        if (Archive && !Archive->Close()) { Error = TEXT("Capture close failed: ") + File; return false; }
+        if (!bOK) Error = TEXT("Capture failed: ") + File;
+        return bOK;
+    };
+    if (SurfaceToVerify)
+    {
+        // Restrict evidence to the real native component. A mannequin, collider
+        // or measured solver wire cannot satisfy the surface assertion.
+        Camera->PrimitiveRenderMode = ESceneCapturePrimitiveRenderMode::PRM_UseShowOnlyList;
+        Camera->ShowOnlyComponent(SurfaceToVerify);
+        Render();
+        TArray<FColor> Pixels;
+        if (!Target->GameThread_GetRenderTargetResource()->ReadPixels(Pixels) || Pixels.Num() != 1200 * 900)
+        { Error = TEXT("Cannot read native surface pixels: ") + Filename; return false; }
+        // The black background's tonemap dither is below 16. A visible material
+        // must cover a real area, not a few isolated bright samples.
+        constexpr int32 MinimumSurfacePixels = 1000;
+        int32 SurfacePixels = 0;
+        for (const FColor& Pixel : Pixels)
+            SurfacePixels += FMath::Max3(Pixel.R, Pixel.G, Pixel.B) > 16;
+        const FString Stem = Filename.LeftChop(4);
+        if (!SavePNG(Stem + TEXT("-cloth-only.png"))) return false;
+        const TSharedRef<FJsonObject> Coverage = MakeShared<FJsonObject>();
+        Coverage->SetStringField(TEXT("asset"), SurfaceToVerify->GetAsset()->GetPathName());
+        Coverage->SetNumberField(TEXT("native_surface_pixels"), SurfacePixels);
+        Coverage->SetNumberField(TEXT("minimum_surface_pixels"), MinimumSurfacePixels);
+        Coverage->SetNumberField(TEXT("channel_threshold"), 16);
+        Coverage->SetNumberField(TEXT("width"), 1200);
+        Coverage->SetNumberField(TEXT("height"), 900);
+        Coverage->SetBoolField(TEXT("passed"), SurfacePixels >= MinimumSurfacePixels);
+        FString Text;
+        FJsonSerializer::Serialize(Coverage, TJsonWriterFactory<>::Create(&Text));
+        if (!FFileHelper::SaveStringToFile(Text, *(Stem + TEXT("-coverage.json"))))
+        { Error = TEXT("Cannot save native surface coverage: ") + Filename; return false; }
+        UE_LOG(LogTemp, Display, TEXT("Native surface pixels %s: %d"), *Filename, SurfacePixels);
+        if (SurfacePixels < MinimumSurfacePixels)
+        {
+            Error = FString::Printf(TEXT("Native cloth surface missing: %s (%d pixels, require %d)"),
+                *Filename, SurfacePixels, MinimumSurfacePixels);
+            return false;
+        }
+        Camera->ClearShowOnlyComponents();
+        Camera->PrimitiveRenderMode = ESceneCapturePrimitiveRenderMode::PRM_RenderScenePrimitives;
+    }
+    Render();
+    return SavePNG(Filename);
 }
 }

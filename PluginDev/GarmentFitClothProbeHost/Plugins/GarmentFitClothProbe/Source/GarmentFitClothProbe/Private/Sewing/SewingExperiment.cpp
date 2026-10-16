@@ -15,7 +15,6 @@
 #include "AssetCompilingManager.h"
 #include "ShaderCompiler.h"
 #include "RenderingThread.h"
-#include "Materials/MaterialInterface.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "Serialization/JsonSerializer.h"
@@ -226,18 +225,8 @@ bool Capture(FPreviewScene& Scene, UChaosClothComponent* Component, const FColle
     if (!Support::EnsureClothRenderReady(Component, Error)) return false;
     FlushPersistentDebugLines(Scene.GetWorld());
     Component->MarkRenderDynamicDataDirty();
-    if (Filename.EndsWith(TEXT("-10s.png")))
-    {
-        const FBoxSphereBounds Bounds = Component->GetBounds();
-        const UMaterialInterface* Material = Component->GetMaterial(0);
-        UE_LOG(LogTemp, Display, TEXT("Sewing render %s: lod=%d materials=%d material0=%s boundsOrigin=%s extent=%s radius=%.5f"),
-            *FPaths::GetBaseFilename(Filename), Component->GetPredictedLODLevel(), Component->GetNumMaterials(),
-            Material ? *Material->GetPathName() : TEXT("null"), *Bounds.Origin.ToString(), *Bounds.BoxExtent.ToString(), Bounds.SphereRadius);
-        // Evidence of the native rendered surface alone; the following standard
-        // capture also overlays measured solver topology, seam and fixed points.
-        const FString SurfaceFile = Filename.LeftChop(4) + TEXT("-surface.png");
-        if (!Support::CapturePreview(Scene, SurfaceFile, FVector(200, 230, 200), FVector(0, 40, 65), Error)) return false;
-    }
+    const FString SurfaceFile = Filename.LeftChop(4) + TEXT("-surface.png");
+    if (!Support::CapturePreview(Scene, SurfaceFile, FVector(200, 230, 200), FVector(0, 40, 65), Error, Component)) return false;
     for (int32 P = 0; P < 2; ++P)
     {
         const auto Pattern = Cloth.GetSimPattern(P);
